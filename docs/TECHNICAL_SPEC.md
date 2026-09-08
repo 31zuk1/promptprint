@@ -432,7 +432,7 @@ For viewports up to 620 px, derive a deterministic SVG overview of at most 24 te
 
 Render the full-cloud opening at exactly `100svh`, then the analysis section in ordinary document flow. Do not insert a discovery/action rail or a smaller representative-cloud preview between them. The analysis toolbar may be sticky only inside the analysis section; the two section bounds must meet without negative margins, fixed cloud layers, or visual overlap. Filters never trigger automatic scrolling; the toolbar retains a `クラウド全体を見る` action for returning to the updated cloud.
 
-Use one local-only visual system across rendered surfaces: `#FCFAF6` paper, `linear-gradient(108deg, #EDF5FF 0%, #F7F2FF 48%, #FFF0E7 100%)`, and one fixed monochrome SVG-turbulence grain layer. Do not animate the grain or stack separate noise layers on cards. Pointer hover on an SVG term uses `translateY(-2px) scale(1.015)` with a restrained drop shadow; keyboard focus does not move, and reduced-motion disables the transform and filter.
+Use one local-only visual system across rendered surfaces: `#FCFAF6` paper, plain typography, and one fixed monochrome SVG-turbulence grain layer. Keep the landing neutral, centered, and single-column, with full-width demo/file buttons stacked vertically and no permanent drop-zone frame. Reserve `linear-gradient(108deg, #EDF5FF 0%, #F7F2FF 48%, #FFF0E7 100%)` for visualization surfaces; do not add rainbow underlines to headings or brand marks. Do not animate the grain or stack separate noise layers on cards. Pointer hover on an SVG term uses `translateY(-2px) scale(1.015)` with a restrained drop shadow; keyboard focus does not move, and reduced-motion disables the transform and filter.
 
 ## 15. Color mapping
 

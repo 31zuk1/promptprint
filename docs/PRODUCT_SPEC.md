@@ -43,9 +43,10 @@ The product must not present pseudo-psychological diagnoses, claim that frequenc
 Show:
 
 - Promptprint name and tagline;
-- a prominent local-file drop zone;
-- primary action `デモを見る`;
-- secondary action `ファイルを選ぶ`;
+- a simple centered, single-column landing without decorative rainbow rules or a permanent import frame;
+- the headline-to-privacy group centered horizontally and vertically against the full viewport, with centered button labels and optically trimmed terminal punctuation; compact-height spacing keeps the group visible, while extremely short windows may scroll rather than clip;
+- large, full-width actions stacked vertically: primary `デモを見る`, then secondary `ファイルを選ぶ`;
+- a borderless local-file drop area with a short drop hint and temporary feedback while dragging;
 - supported-input note: ChatGPT ZIP/JSON and Claude ZIP/JSON（実験的）;
 - privacy statement `会話データはブラウザの外へ送信されません`;
 - a short import → local analysis → explore/export explanation.
@@ -115,7 +116,7 @@ Use `docs/reference/wordcloud-reference.jpeg` as visual inspiration, not as a li
 Desired qualities:
 
 - a full-bleed primary canvas on desktop followed by compact rounded summary surfaces in the analysis section;
-- one unified `Chromatic Print` language across landing, cloud, analysis, and PNG: warm paper, a restrained blue → violet → orange directional gradient, and one static monochrome grain layer;
+- warm paper, plain typography, and one static monochrome grain layer across landing, cloud, analysis, and PNG; the landing stays neutral and minimal, with the blue → violet → orange gradient reserved for visualization surfaces rather than decorative headline or brand rules;
 - abundant intentional whitespace;
 - bold words with meaningful size differences;
 - no word rotation by default;

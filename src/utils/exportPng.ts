@@ -76,12 +76,6 @@ export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSigna
   context.fillStyle = '#17151c';
   context.font = '800 62px system-ui, -apple-system, sans-serif';
   context.fillText('Promptprint', 126, 126);
-  const identityGradient = context.createLinearGradient(126, 0, 300, 0);
-  identityGradient.addColorStop(0, '#2563eb');
-  identityGradient.addColorStop(.5, '#7c3aed');
-  identityGradient.addColorStop(1, '#c2410c');
-  context.fillStyle = identityGradient;
-  context.fillRect(126, 148, 174, 5);
   context.font = '400 29px system-ui, -apple-system, sans-serif';
   context.fillStyle = '#625e66';
   context.fillText('AIとの会話から、言葉の指紋を見る。', 126, 194);

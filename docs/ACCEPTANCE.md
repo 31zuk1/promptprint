@@ -122,7 +122,9 @@ At 1440 × 1000:
 - [x] **MUST** hierarchy is immediately clear.
 - [x] **MUST** the cloud is the dominant visual element.
 - [x] **MUST** the reference qualities are present: pale full-bleed gradient, bold varied-size words, and intentional whitespace, with rounded summary surfaces reserved for grouped results.
-- [x] **MUST** landing, cloud, analysis, and PNG share the same warm-paper, blue/violet/orange gradient, and static-grain visual language.
+- [x] **MUST** landing, cloud, analysis, and PNG share warm paper, plain typography, and static grain; semantic blue/violet/orange gradients belong to visualization surfaces, without decorative rainbow headline or brand rules.
+- [x] **MUST** the landing is a centered single column without a permanent drop-zone frame; `デモを見る` and `ファイルを選ぶ` are stacked vertically, full-width within their action group, and at least 64 px high on desktop and mobile.
+- [x] **MUST** at 1440 × 1000, 713 × 584, 1440 × 600, 390 × 844, and 320 × 800, the headline-to-privacy group is vertically centered within 1 px and text/action rows share the horizontal centerline; extremely short windows retain safe top clearance and scrollable content instead of clipping.
 - [x] **MUST** pointer hover gives a term a restrained lift without collision; focus remains position-stable and reduced-motion removes the lift.
 - [x] **MUST** labels are natural Japanese rather than raw developer terminology.
 - [x] **MUST** controls are not clipped and microtext remains readable.

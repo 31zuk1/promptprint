@@ -1,6 +1,6 @@
 # ExecPlan: Promptprint browser-only PoC
 
-> Status: full design remediation and the subsequent continuous-scroll correction completed at 2026-09-05 04:48 JST after a recoverable source snapshot, critical review, and final desktop/mobile/ultrawide browser validation. This document records repository reality, evidence, and remaining tradeoffs so work can resume without prior conversation context.
+> Status: landing alignment correction completed and validated on 2026-09-09. The GitHub checkpoint `404b9d0` preserves the preceding design. Earlier milestones below remain historical evidence.
 
 ## Purpose and visible outcome
 
@@ -20,7 +20,7 @@ The completed PoC:
 Initial discovery at `2026-09-04T23:40:04+09:00` found an empty working directory with no Git metadata. At final reconciliation:
 
 - working directory: `/Users/haramizuki/Project/uraimonitor`;
-- the directory is still not a Git repository, so commit checkpoints and a literal Git-checkout operation are unavailable; a clean temporary directory containing only `package.json` and `pnpm-lock.yaml` was used for the equivalent frozen-lockfile install check;
+- Git was initialized and the initial commit `404b9d0` pushed to `https://github.com/31zuk1/bigwords` on `main`; the working tree was clean before the 2026-09-09 landing refinement;
 - Node.js: `v22.13.0`;
 - pnpm: `11.19.0`;
 - package name/version: `promptprint@0.1.0`;
@@ -376,3 +376,43 @@ Validation completed at 05:02–05:08 JST:
 - `pnpm check`: PASS — strict TypeScript, zero-warning ESLint, 10 Vitest files / 61 tests, and 36-module production build. The final rerun after the 320 px remediation produced CSS 37.63 kB (8.35 kB gzip), app JS 244.60 kB (78.03 kB gzip), and worker 53.85 kB.
 - `pnpm e2e`: PASS — final artifact-generating rerun passed 9/9 Chromium tests in 16.4 seconds, including exact-origin network, console-error, volatile-storage, import recovery, cancellation races, export privacy, ultrawide-boundary, and mobile-drawer guards.
 - regenerated and inspected `artifacts/promptprint-landing.png`, `promptprint-demo.png`, `promptprint-demo-full.png`, `promptprint-mobile.png`, `promptprint-ultrawide-analysis.png`, and `promptprint-export.png` (2,200 × 1,340). The export is legible and contains no raw excerpts, titles, email addresses, or hidden terms.
+
+### Simple landing and larger stacked actions (2026-09-09)
+
+The owner explicitly rejected the rainbow headline/brand rules, colored decorative marks, dotted import frame, and small side-by-side buttons. This supersedes the earlier decorative landing direction.
+
+- [x] Inspected the owner's three screenshots and the clean Git checkpoint `404b9d0`.
+- [x] Replaced the two-column landing with a centered single-column composition, plain headline, and large vertically stacked demo/file actions; retained file-drop behavior without a permanent frame.
+- [x] Removed matching decorative rainbow rules from the shared brand, analysis heading/toolbar, and PNG title so the rejected motif does not reappear later.
+- [x] Inspected desktop, mobile, and 320 px layouts; ran existing checks and updated screenshot evidence.
+
+The landing now uses neutral paper with the existing faint static grain. Redundant brand text, colored bars, the upload-icon tile, and the permanent import outline are gone. The short three-step explanation is monochrome. A temporary solid outline still identifies the drop target while dragging. The local-only privacy promise, supported formats, demo/import handlers, recovery diagnostics, semantic cloud colors, and restrained word hover remain intact.
+
+Validation:
+
+- `pnpm check`: PASS — strict TypeScript, zero-warning ESLint, 10 Vitest files / 61 tests, and production build (35 modules; CSS 34.17 kB / 7.61 kB gzip, app JS 243.25 kB / 77.68 kB gzip, worker 53.85 kB).
+- `pnpm e2e`: PASS — 9/9 Chromium tests in 26.3 seconds, including import recovery, demo, context, PNG privacy, network/console guards, cancellation races, ultrawide boundaries, and mobile operation. The first sandboxed attempt could not bind port 4173 (`listen EPERM`); the approved elevated rerun passed without changing test expectations.
+- Browser DOM measurements at 1440 × 1000, 390 × 844, and 320 × 800: action sizes were respectively 480 × 68, 358 × 64, and 288 × 64 px; both buttons shared their left/right bounds with a 12 px vertical gap. Document width exactly matched each viewport. The import border was `none`, as were the headline background and brand pseudo-element.
+- The Playwright skill's optional CLI wrapper could not fetch its package inside the network sandbox (`ENOTFOUND registry.npmjs.org`); existing repository Playwright tests provided artifact evidence and CUA browser controls supplied responsive DOM measurements. The in-app browser's responsive screenshot capture was scaled/stitching-imperfect; desktop visual review used the unscaled test artifact. No application workaround was added for this capture issue, and temporary viewport overrides were reset.
+- Regenerated all six existing PNG artifacts; visually inspected `artifacts/promptprint-landing.png`, `artifacts/promptprint-demo-full.png`, and `artifacts/promptprint-export.png`. The landing has no decorative rainbow strokes or import frame; analysis and export headings are plain while the visualization retains its semantic colors.
+- `git diff --check`: PASS. The existing localhost:5173 preview served the revised landing through hot reload; its development server was left running.
+
+### Viewport-centered landing and optical text alignment (2026-09-09)
+
+The owner identified that the headline, copy, actions, and privacy line still did not read as one precisely centered composition. Preserve the preceding uncommitted simplification and correct alignment only.
+
+- [x] Measured the existing live 713 × 584 viewport: the group occupied y=132–600.96 (center 366.48 vs viewport center 292), and the demo text center was 14 px right of the file button's text center. Header flow, asymmetric stage padding, and icon-inclusive centering caused these offsets; full-width terminal Japanese punctuation also leaves visible trailing space.
+- [x] Centered the full landing group against the viewport with symmetric clearance and compact short-height spacing; extremely short windows scroll without clipping or header overlap.
+- [x] Removed decorative action/privacy icons and trimmed only terminal punctuation's unused half-em so visible text follows the shared centerline.
+- [x] Validated desktop, compact-height, and narrow layouts with live measurements, screenshot inspection, and the existing checks.
+
+Implementation: the wordmark remains in its original top position but no longer consumes stage layout height. The stage uses `min-height: 100svh` and symmetric padding rather than a header-subtracted viewport and asymmetric padding. A 740 px height breakpoint reduces spacing/type without shrinking buttons below 64 px. Terminal punctuation stays visible and in the text content; the heading retains its canonical accessible name via `aria-label`. No import, analysis, export, or worker logic changed.
+
+Validation evidence:
+
+- Live browser measurements: group vertical-center error was at most 0.004 px at 1440 × 1000, 713 × 584, 1440 × 600, 390 × 844, and 320 × 800. At 390 × 844, both headline lines, both description lines, buttons, drop hint, and privacy row were horizontally centered within 0.004 px. The former 14 px demo-label offset is now zero.
+- All measured viewports had document width equal to viewport width. At the deliberately extreme 568 × 320 size, the stage grows to 557.18 px with 76 px top clearance, leaving every item reachable by scrolling instead of vertically clipping the group or colliding with the wordmark. Temporary browser viewport overrides were reset.
+- Final `pnpm check`: PASS — strict TypeScript, zero-warning ESLint, 10 Vitest files / 61 tests, and 35-module production build (CSS 34.30 kB / 7.66 kB gzip, app JS 243.30 kB / 77.60 kB gzip, worker 53.85 kB).
+- Final `pnpm e2e`: PASS — 9/9 Chromium tests in 40.7 seconds, with existing network, console, import, context, export/privacy, cancellation, ultrawide, and mobile guards unchanged. The initial run found three failures because punctuation wrappers altered the inferred accessible heading name; the explicit canonical label fixed the implementation, without relaxing test assertions.
+- Regenerated the existing screenshot artifacts and visually inspected the updated `artifacts/promptprint-landing.png`. Live geometry checks used the available CUA browser controls because the optional skill CLI remained unavailable as documented in the preceding entry; existing repository Playwright tests provided the screenshot evidence.
+- `git diff --check`: PASS. The original localhost:5173 development server remains running and hot-reloaded with the correction.
