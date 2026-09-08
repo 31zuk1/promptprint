@@ -1,0 +1,101 @@
+[
+  {
+    "id": "conversation-branch",
+    "title": "分岐のある会話",
+    "create_time": 1725148800,
+    "update_time": 1725148860,
+    "current_node": "user-2",
+    "mapping": {
+      "root": {
+        "id": "root",
+        "parent": null,
+        "children": ["system-1"],
+        "message": null
+      },
+      "system-1": {
+        "id": "system-1",
+        "parent": "root",
+        "children": ["user-1"],
+        "message": {
+          "id": "message-system",
+          "author": { "role": "system" },
+          "create_time": 1725148800,
+          "content": { "content_type": "text", "parts": ["内部システム指示"] }
+        }
+      },
+      "user-1": {
+        "id": "user-1",
+        "parent": "system-1",
+        "children": ["assistant-selected", "assistant-discarded"],
+        "message": {
+          "id": "message-user-1",
+          "author": { "role": "user" },
+          "create_time": 1725148801,
+          "content": { "content_type": "text", "parts": ["現在の分岐だけを見たい"] }
+        }
+      },
+      "assistant-selected": {
+        "id": "assistant-selected",
+        "parent": "user-1",
+        "children": ["tool-call"],
+        "message": {
+          "id": "message-assistant-selected",
+          "author": { "role": "assistant" },
+          "create_time": 1725148802,
+          "content": {
+            "content_type": "multimodal_text",
+            "parts": [
+              { "type": "text", "text": "選択中の回答です" },
+              { "type": "image_asset_pointer", "asset_pointer": "file-service://private-image" }
+            ]
+          }
+        }
+      },
+      "tool-call": {
+        "id": "tool-call",
+        "parent": "assistant-selected",
+        "children": ["tool-output"],
+        "message": {
+          "id": "message-tool-call",
+          "author": { "role": "assistant" },
+          "recipient": "python",
+          "create_time": 1725148803,
+          "content": { "content_type": "text", "parts": ["print('hidden tool call')"] }
+        }
+      },
+      "tool-output": {
+        "id": "tool-output",
+        "parent": "tool-call",
+        "children": ["user-2"],
+        "message": {
+          "id": "message-tool-output",
+          "author": { "role": "tool" },
+          "create_time": 1725148804,
+          "content": { "content_type": "execution_output", "text": "hidden output" }
+        }
+      },
+      "user-2": {
+        "id": "user-2",
+        "parent": "tool-output",
+        "children": [],
+        "message": {
+          "id": "message-user-2",
+          "author": { "role": "user" },
+          "create_time": 1725148805,
+          "content": { "content_type": "text", "parts": ["この回答を続けて"] }
+        }
+      },
+      "assistant-discarded": {
+        "id": "assistant-discarded",
+        "parent": "user-1",
+        "children": [],
+        "message": {
+          "id": "message-assistant-discarded",
+          "author": { "role": "assistant" },
+          "create_time": 1725148900,
+          "content": { "content_type": "text", "parts": ["DISCARDED_BRANCH_SENTINEL"] }
+        }
+      }
+    }
+  }
+]

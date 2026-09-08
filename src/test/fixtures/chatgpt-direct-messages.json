@@ -1,0 +1,41 @@
+{
+  "conversations": [
+    {
+      "id": "direct-conversation",
+      "title": "直接メッセージ形式",
+      "messages": [
+        {
+          "id": "direct-system",
+          "role": "system",
+          "content": "表示してはいけないシステム文"
+        },
+        {
+          "id": "direct-user",
+          "role": "user",
+          "created_at": "2026-01-02T03:04:05.000Z",
+          "content": [
+            { "type": "text", "text": "文章ブロック一" },
+            { "type": "image", "url": "https://example.invalid/private.png" },
+            { "type": "text", "text": "文章ブロック二" }
+          ]
+        },
+        {
+          "id": "direct-assistant",
+          "author": { "role": "assistant" },
+          "create_time": 1767323106,
+          "content": { "parts": ["直接形式の回答"] }
+        },
+        {
+          "id": "direct-execution",
+          "role": "assistant",
+          "content": { "content_type": "execution_output", "text": "秘密の実行結果" }
+        },
+        {
+          "id": "direct-empty",
+          "role": "user",
+          "content": [{ "type": "image", "url": "https://example.invalid/only-image.png" }]
+        }
+      ]
+    }
+  ]
+}

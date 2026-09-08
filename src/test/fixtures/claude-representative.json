@@ -1,0 +1,48 @@
+{
+  "chats": [
+    {
+      "uuid": "claude-chat-one",
+      "name": "Claude代表形式",
+      "created_at": "2026-02-03T10:00:00.000Z",
+      "updated_at": "2026-02-03T10:02:00.000Z",
+      "chat_messages": [
+        {
+          "uuid": "claude-human-one",
+          "sender": "human",
+          "created_at": "2026-02-03T10:00:00.000Z",
+          "text": "Claudeの履歴を調べたい"
+        },
+        {
+          "uuid": "claude-assistant-one",
+          "sender": "assistant",
+          "created_at": "2026-02-03T10:01:00.000Z",
+          "content": [
+            { "type": "text", "text": "安全に形式を確認します" },
+            { "type": "image", "source": { "data": "private-binary-placeholder" } }
+          ]
+        },
+        {
+          "uuid": "claude-tool-one",
+          "sender": "tool",
+          "text": "読み飛ばすツール結果"
+        }
+      ]
+    },
+    {
+      "id": "claude-chat-two",
+      "title": "Claude役割バリエーション",
+      "messages": [
+        {
+          "id": "claude-user-two",
+          "role": "user",
+          "content": "別形式の質問"
+        },
+        {
+          "id": "claude-ai-two",
+          "author": { "role": "claude" },
+          "content": [{ "type": "text", "text": "別形式の回答" }]
+        }
+      ]
+    }
+  ]
+}
