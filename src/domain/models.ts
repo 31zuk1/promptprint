@@ -47,13 +47,17 @@ export interface ImportResult {
 }
 
 export type ProviderFilter = 'all' | Provider;
-export type TimeRange = 'all' | '30d' | '90d' | '1y';
+export type TimeRange = 'all' | '30d' | '90d' | '1y' | 'custom';
+export type VocabularyFocus = 'topics' | 'all';
 
 export interface AnalysisSettings {
   provider: ProviderFilter;
   timeRange: TimeRange;
+  startDate: string;
+  endDate: string;
   termLimit: 40 | 60 | 80 | 120;
   includePhrases: boolean;
+  vocabularyFocus: VocabularyFocus;
   excludeCode: boolean;
   excludeQuotes: boolean;
   minDocumentFrequency: number;
@@ -63,8 +67,11 @@ export interface AnalysisSettings {
 export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
   provider: 'all',
   timeRange: 'all',
+  startDate: '',
+  endDate: '',
   termLimit: 80,
   includePhrases: true,
+  vocabularyFocus: 'topics',
   excludeCode: true,
   excludeQuotes: true,
   minDocumentFrequency: 2,
@@ -72,7 +79,7 @@ export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
 };
 
 export type TermKind = 'word' | 'phrase';
-export type BiasLabel = 'user' | 'shared' | 'assistant';
+export type BiasLabel = 'user' | 'shared' | 'assistant' | 'insufficient';
 
 export interface TermStats {
   term: string;
@@ -82,12 +89,23 @@ export interface TermStats {
   dfAssistant: number;
   rateUser: number;
   rateAssistant: number;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  tokenFrequencyUser: number;
+  tokenFrequencyAssistant: number;
+  tokenTotalUser: number;
+  tokenTotalAssistant: number;
+  per1000TokensUser: number | null;
+  per1000TokensAssistant: number | null;
   bias: number;
   biasLabel: BiasLabel;
   importance: number;
   conversationCoverage: number;
   providerCoverage: Provider[];
   rawFrequency: number;
+  /** Selection evidence only; never a size/coordinate or a semantic score. */
+  topicEvidence?: { eligible: boolean; nounMessageCount: number; score: number };
+  lexicalEligible?: boolean;
 }
 
 export interface TermContext {
@@ -155,11 +173,30 @@ export interface DatasetSummary {
 
 export interface AnalysisResult {
   summary: DatasetSummary;
+  timeline?: TimelineMetadata;
+  display: {
+    layoutOmittedCount: number;
+    compoundSuppressedCount: number;
+    /** Committed display policy; absent only in legacy aggregate fixtures. */
+    vocabularyFocus?: VocabularyFocus;
+    topicFilteredCount?: number;
+  };
   terms: TermStats[];
   layout: LaidOutTerm[];
   contexts: Record<string, TermContext[]>;
   insights: Insights;
   diagnostics: DiagnosticItem[];
+}
+
+/** Provider-filtered date coverage before applying the selected time range. */
+export interface TimelineMetadata {
+  startDate: string | null;
+  endDate: string | null;
+  datedMessageCount: number;
+  undatedMessageCount: number;
+  fallbackMessageCount: number;
+  appliedRange?: { startDate: string; endDate: string };
+  sourceProviders?: Provider[];
 }
 
 export interface SerializableFile {

@@ -1,5 +1,42 @@
 # Promptprint PoC — Technical specification
 
+## Morphological topic-extraction architecture (redesign, 2026-09-09)
+
+The production pipeline is now `cleanTextDetailed → extractLexicalTokensDetailed → extractNounPhrases → computeTermStatistics → display selection → layout`. `morphology.ts` uses pinned kuromoji 0.1.2 with packaged IPADIC; `englishMorphology.ts` uses pinned wink-pos-tagger 2.2.2 with its bundled English contextual model. The old `Intl.Segmenter`-only repair and arbitrary NPMI n-gram path are not the production extraction foundation. Legacy helper functions remain for compatibility tests, not as a silent fallback on dictionary failure.
+
+Both analysis workers await `initializeMorphology()` before synchronous analysis. Initialization is deduplicated per worker; errors are safe Japanese failures, and a failed load can be retried. Only fixed same-origin or extension-packaged dictionary asset names are fetched; no text, token or account value enters those requests. Twelve gzip files total 17,791,956 bytes compressed and 100,260,388 bytes expanded, before indexes/lattice overhead. `scripts/morphology-assets.mjs` serves them in development and emits them, with upstream licenses/notices, into both static builds. The English model is JavaScript bundled into the worker; it makes no separate model request.
+
+`AnalysisSettings.vocabularyFocus` defaults to `topics`; `all` retains broad vocabulary. Both modes share the exact `AnalysisDocument.words` ledger: observed source surfaces, lowercased/NFKC canonical forms, UTF-16 spans and occurrence-level `topicEligible` / `displayEligible` metadata. Lemmas are not substituted. Nominal usage means eligible nouns, not every Japanese UNKNOWN or English wordlike token. English adjectives may modify a phrase but are not standalone topic nouns. Japanese prefixes/suffixes and one-character noun atoms can contribute to a compound without being standalone topic labels. Exact procedural-word rules are presentation guards, not a topical whitelist. Grammar, punctuation and hidden-span removal creates gaps that no phrase can bridge.
+
+For each production candidate, `topicEvidence.eligible = nounMessageCount / messageDf >= 0.5`: at least half of its distinct observed messages contain an eligible nominal occurrence. Measurements still count all accepted occurrences, including a surviving word's non-nominal uses. Default ranking is:
+
+```text
+D = dfUser + dfAssistant
+C = number of selected conversations containing analyzed messages
+c = candidate conversationCoverage
+topicSelectionScore = ln(1 + D) × (1 + ln((C + 1) / (c + 1))) × D / (D + 2)
+```
+
+The support factor `D/(D+2)` suppresses weak evidence; inverse conversation frequency separates concentrated subjects from broad boilerplate. The `+1` floor preserves all-conversation themes. This replaces the earlier maximum-35% bonus for production candidates. It is not semantic relevance, statistical significance or a new size encoding. `TermStats.importance`, role rates and bias retain their original formulas. Broad mode ranks by importance. Side quotas and positional compound representation run only on eligible candidates; no fallback fills empty slots with rejected terms. Insights, adoption presentation and provider selections follow the same policy. `result.display` carries the completed focus/exclusion counts, not pending UI settings.
+
+Noun phrases need two distinct messages, even within one conversation, and obey the grammar and bounds in section 9. The former cross-conversation/three-message exception and NPMI threshold no longer apply to the production extractor. The existing >=80%/at-least-two actual-position containment rule remains display-only. Dictionary-based counts may differ from older releases, but surviving-term measurements never differ solely because `topics` / `all` changes.
+
+## Fixed-metric 3D alternative (2026-09-09)
+
+`analysis/spatial.ts` maps current `result.layout` terms without mutation/reselection: X=−bias, Y=(rateUser+rateAssistant)/2 when both role denominators are nonzero (otherwise the observed rate), Z=conversationCoverage/summary.conversationCount. No available comparison produces X=0 and `comparisonAvailable=false`. Zero denominators produce zero coordinate, not evidence of equality. Ranges are clamped defensively to fixed [−1,1]/[0,1]/[0,1]. Orthographic yaw/pitch projection fits the eight fixed cube corners, never the observed term extrema; camera bounds are yaw ±65°, pitch 0–60°, zoom 0.8–1.2, with default −28°/20°/1.0.
+
+`analysis/spatialScene.ts` supplies SVG and Canvas point depth order, edges, endpoint/tick labels and collision-free screen-space word-label boxes. Points are never displaced, dropped or enlarged for depth/importance. At most 28 desktop/10 mobile text labels are placed; a long display label is truncated to 14 code points including an ellipsis, without modifying its canonical term or original statistics. The selection menu retains every current point. Fixed 14 px labels and radius-5 dots are viewport presentation constants, uniformly scaled in PNG. The SVG uses actual container dimensions; PNG uses a fixed 1100×620 orthographic viewBox at uniform 1.4 scale. Equal camera/world values are shared; aspect ratio, not a data-dependent rescaling, explains different fitted pixel positions.
+
+`SpatialCloud`, `VisualizationSwitch` and parent-local mode/camera state are shared by ordinary and private apps. They add no worker request, storage, fetch, runtime dependency, WebGL or permission. Camera/view operations increment the existing playback pause guard. Existing context selection snapshots remain unchanged. Point clicks/Enter use the same drawer/hide path; all co-located terms remain accessible through a select and 44 px context button. Mouse/pen drag starts on the empty canvas, touch scrolling stays native, and arrow handling is limited to the focused SVG itself. `exportSpatial.ts` renders aggregate-only points/labels using the shared scene; `exportPng.ts` keeps its original 2D and cancellation/revocation branches.
+
+## Chronological preview implementation (2026-09-09)
+
+`analysis/timeline.ts` provides strict `YYYY-MM-DD` parsing, fixed JST day keys, effective message timestamps and bounded deterministic day/month frames. Date filtering uses `[start 00:00 JST, day-after-end 00:00 JST)` and never host timezone or date-rollover normalization. Relative 30/90/365-day presets include today. Custom empty bounds are open; invalid/reversed input yields zero results plus `INVALID_DATE_RANGE`, never an all-data fallback.
+
+`AnalysisResult.timeline` contains source extent, provider provenance, dated/undated/fallback counts before the date filter, and the committed applied range. Metadata contains no original text, title or identity. The normal worker keeps its existing volatile-only path; the private worker reuses its resident corpus for unchanged storage revision. Both run the same filtering/statistics/layout pipeline for every frame.
+
+`TimelineControls` requests one frame, observes its completed result/range, then schedules a single dwell timeout. Pause, external filters, context/export, hidden documents, errors and unmount stop scheduling. In-flight analysis may complete once after pause. Context selection snapshots the selected term, its bounded contexts and committed period together, so an in-flight frame cannot mix new excerpts with old statistics; hiding a word during a pending filter remains available. Private source acquisition blocks playback; it does not get started by timeline actions. No position morphing or permanent frame cache is used, and no runtime dependency or network permission was added.
+
 ## 1. Architecture
 
 Promptprint is a static, client-only application:
@@ -22,13 +59,14 @@ Use:
 - TypeScript in strict mode;
 - pnpm;
 - a Web Worker for expensive parsing and analysis;
+- bundled Japanese IPADIC morphology and an English contextual POS model;
 - a small browser-capable ZIP reader such as `fflate`;
 - Vitest and Testing Library;
 - Playwright;
 - ESLint;
 - a small DOM-to-image dependency only if it is necessary for reliable export.
 
-Do not introduce a backend, database, remote API, analytics SDK, remote font, CDN script, or runtime package loading.
+Do not introduce a backend, remote API, analytics SDK, remote font, CDN script, or runtime package loading. Dictionary fetches load only fixed assets shipped in the same static deployment; source text is never a request parameter or body. The separately authorized private build's existing local store is governed by `docs/PRIVATE_LOCAL.md`, not the ordinary Web retention policy.
 
 ## 2. Module boundaries
 
@@ -61,6 +99,10 @@ src/
     claude.ts
   analysis/
     cleanText.ts
+    morphology.ts
+    englishMorphology.ts
+    lexical.ts
+    nounPhrases.ts
     tokenize.ts
     phrases.ts
     statistics.ts
@@ -241,95 +283,98 @@ Default cleaning:
 
 1. normalize Unicode with NFKC;
 2. normalize line endings;
-3. remove fenced Markdown code blocks when enabled;
+3. when code exclusion is enabled, remove fenced code and inline expressions, complete delimited TeX math, TeX command markers and recognized shell-prompt lines; preserve only the bounded single-identifier inline exception below;
 4. remove blockquote lines when enabled;
 5. remove URLs, email-like strings, long hashes, and obvious file paths;
 6. remove Markdown link destinations while retaining safe anchor text;
-7. collapse repeated whitespace;
+7. collapse horizontal whitespace while preserving newline boundaries at removed source material;
 8. cap per-message analysis length and emit a safe warning when capped;
 9. reject zero-width and control-character noise.
 
-URL and email removal is always enabled. Do not claim perfect recognition of pasted articles, quotations, or all path formats.
+URL, email and known bounded provider-citation-control removal is always enabled. Removed material leaves a hard newline boundary so English words on either side cannot form a manufactured phrase. Markdown link labels remain available, surrounded by hard boundaries. Do not claim perfect recognition of pasted articles, quotations, mathematical notation, shell commands or all path formats; unmatched delimiters may remain.
 
-## 8. Tokenization and filtering
+An inline-code span may retain one ASCII identifier of at most 64 UTF-16 units: letter/underscore-led identifier components optionally separated by dots, or the single-letter C++/C#-style form. Examples include React, useEffect and Node.js. It cannot contain spaces, function-call/expression punctuation, paths or URL syntax. The retained identifier is surrounded by newlines, never concatenated with neighboring prose. This preserves source names as possible evidence without treating an entire code expression as a noun phrase; downstream mandatory redaction and hidden-term policy still applies.
 
-### 8.1 Tokenizer contract
+## 8. Morphological tokenization and filtering
+
+### 8.1 Runtime contract and bounds
 
 ```ts
-interface Tokenizer {
-  tokenize(text: string, localeHint?: string): SurfaceToken[];
-}
+await initializeMorphology(); // once per worker, shared concurrent initialization
+const parts = segmentMorphology(cleanedText); // all Japanese POS and exact source spans
+const english = tagEnglishSpans(cleanedText); // English Penn POS and exact source spans
+const { words, limitedSpanCount } = extractLexicalTokensDetailed(cleanedText, hiddenTerms);
 ```
 
-Baseline:
+`MorphToken` retains `surface`, zero-based UTF-16 `index` / `end`, POS details, `known` and optional `limited`; its basic form is informational and never replaces the source surface in counts. Source-slice equality is verified instead of trusting kuromoji's code-point-based positions. Latin canonical forms are lowercased, and the most common observed variant supplies the display form.
 
-- use `Intl.Segmenter` with word granularity for mixed Japanese and English;
-- lowercase Latin canonical forms;
-- retain the most frequent original variant as display form;
-- optionally use a small deterministic English stemmer;
-- do not require a remotely downloaded dictionary.
+Japanese processing is capped at 100,000 UTF-16 units per cleaned message. Its Viterbi lattice sees at most 256 units at a time, with 64 units of look-ahead; only complete token boundaries are committed before the next window. Sentence punctuation and surrogate characters are explicit boundaries. The BMP-only dictionary does not claim supplementary-plane character recognition. An indivisible pathological run becomes a `limited:true` non-lexical span, not invented chopped words; the pipeline reports its count. English context is capped at 128 tokens and individual accepted tagger inputs at 256 units. Japanese, emoji, newline and removed-text gaps delimit English context. English contractions are source splits, not expansions or generated lemmas.
 
-If `Intl.Segmenter` is unavailable, use a deterministic local fallback and document the quality difference.
+The Japanese core is imported directly with `DynamicDictionaries` / `Tokenizer`, bypassing upstream Node/XHR loaders. Gzip inputs have fixed expected expanded lengths and a 6,000,000-byte compressed-file ceiling, and are loaded sequentially. The English model is statically bundled. Dictionary failure is explicit and cannot silently restore heuristic-only topic output. Ordinary Web workers never persist messages or linguistic caches.
 
-### 8.2 Noise filtering
+### 8.2 Common ledger and presentation eligibility
 
-Exclude:
+`lexical.ts` combines the Japanese and English spans; an English UNKNOWN noun label from IPADIC is not treated as grammatical evidence. It removes particles, auxiliaries, interjections, punctuation, pure numbers, non-independent/pronominal forms, unsafe symbol runs, exact acknowledgments and hidden spans. Unknown all-hiragana blobs are conservative exclusions, not a ban on dictionary-recognized hiragana content words. Very short Latin noise is excluded; bounded acronym/programming-identifier forms are preserved by explicit orthographic rules. Model errors and domain-specific identifiers remain limitations.
 
-- punctuation and whitespace;
-- pure numbers and dates;
-- URL or email remnants;
-- Japanese and English stopwords;
-- a small documented list of generic assistant scaffolding terms;
-- one-character hiragana or katakana;
-- Latin tokens shorter than two characters except a small whitelist such as `AI`, `VR`, `AR`, and `OZ`;
-- symbol-dominated tokens.
+Accepted nouns, verbs, adjectives and noun-connecting prefixes can enter the common measurement ledger. Standalone display excludes prefix/suffix atoms and explicit stopwords; topic eligibility additionally requires eligible nominal usage, excluding standalone adjectives, procedural forms and one-character Japanese-script atoms. Japanese procedural nouns may remain measurement atoms so real compounds such as 説明変数 are not destroyed. Prefixes/suffixes and English adjectives can modify grammatical noun phrases without becoming isolated topic labels. The 50% distinct-message topic threshold is applied at aggregation, not by deleting a surviving word's non-nominal measurements.
 
-Single CJK characters may be excluded by default with a small justified whitelist.
+IPADIC labels Japanese adjectival stems as nouns, so `形容動詞語幹` receives a bounded local context check. A following copula with basic form だ/です, に/な/という, or と＋いう/言う marks that occurrence adjectival rather than standalone-topic nominal evidence. Nominal contexts such as 自由が / 不安を and literal noun compounds remain possible. This is an explicit grammatical approximation, not sentiment inference or a blanket exclusion of words expressing feelings or evaluation.
 
-Store token sets per message for document frequency and ordered token arrays for phrase, context, and sequence analysis.
+Hidden matches must align with actual span boundaries; matching joins are bounded to 64 UTF-16 units. No substring rule removes `OKR` because `OK` is hidden. Original text and intervening gaps remain intact: punctuation, removed grammar and hidden spans cannot be bridged into a phrase. A response-only message still contributes to role message totals, dates and conversation counts but has zero accepted content tokens. An all-noise or all-ineligible input produces an explained empty chart, never filler.
 
-## 9. Phrase extraction
+## 9. Grammatical noun phrases
 
-Support unigrams plus selected bigrams and trigrams. The words-only filter bypasses phrase candidates.
+`nounPhrases.ts` replaces unrestricted bigram/trigram association discovery in production. Words-only mode bypasses phrase candidates; the atomic ledger is unchanged.
 
-A phrase candidate:
+A candidate must:
 
-- consists of adjacent content tokens;
-- occurs in at least two or three distinct messages, depending on corpus size;
-- appears in more than one conversation for normal-size corpora;
-- passes normalized PMI or another documented deterministic association score;
-- does not begin or end with a stopword;
-- is not a near-duplicate formatting variant.
+- contain 2–6 Japanese/mixed noun atoms or 2–4 English noun/modifier atoms, spanning at most 40 UTF-16 units;
+- have only grammatical noun/modifier components, never start with a suffix or end with a prefix/adjective;
+- contain an eligible topic atom, or satisfy the explicit productive Japanese nominal-suffix rule (for example 回答率), rather than qualify merely because it contains several generic words;
+- be literally adjacent for Japanese compounds; English permits horizontal spaces/tabs but not newlines;
+- never cross punctuation, Japanese whitespace lists, removed verbs/grammar, code or hidden spans;
+- occur in at least two distinct source messages, including within one focused conversation;
+- retain the exact source surface and every counted occurrence of a returned phrase.
 
-Prefer an informative phrase such as `海外大学院` or `北朝鮮 ネットワーク` when strongly associated, but do not globally suppress useful component words. Deduplicate only during top-term selection.
+No NPMI threshold, cross-conversation requirement or three-message one-thread exception remains. Component statistics are retained, and only the later actual-position containment stage decides whether a compound represents a component in the display. This is grammar-constrained surface extraction, not entity recognition or semantic topic generation.
 
-Cap candidate generation to avoid pathological memory or quadratic behavior.
+Large-corpus extraction uses four bounded passes over all prepared messages, not a first-token prefix or an all-phrases-off fallback:
+
+1. Estimate distinct-message support with a fixed 6 MiB, three-row Count-Min sketch. A per-message set prevents repeated text inside one answer from becoming extra message support.
+2. Admit at most 100,000 candidate keys through a deterministic bounded heap ordered by estimated support, longer canonical surface, then canonical lexical order. Estimates below two do not enter; hash collisions can influence admission only.
+3. Recount exact full-corpus message DF and occurrence totals for admitted keys; remove actual single-message families. Select whole phrase families into a 500,000-position budget, ordered by exact DF, larger atom count, longer surface, fewer total positions and canonical order. Skip an over-budget family rather than taking only its prefix occurrences.
+4. Replay every position of retained families. All returned DF, occurrence counts, spans and subsequent role measurements are exact over the complete prepared corpus. Omitted candidate vocabulary is a selection limitation, not a partial frequency estimate.
+
+The extraction metadata records candidate-capacity status, examined/supported/retained family counts, omitted supported families and retained positions. `limited` means one or more complete families may have been excluded; it does not mean phrases are globally disabled. Candidate-capacity saturation cannot supply an exact count of every unseen candidate family. The existing safe warning recommends a narrower period/provider when budget exclusions occur.
 
 ## 10. Statistics
 
-Use message-document frequency as the primary measure because assistant messages are usually longer.
+Use message-document frequency and empirical role-specific message occurrence rates as the primary measures. These describe the proportion of messages containing a term; they do **not** correct message length or establish statistical equivalence.
 
 For term `w` and role `r`:
 
 ```text
 df_r(w)   = number of messages by role r containing w
 m_r       = total analyzed messages by role r
-rate_r(w) = (df_r(w) + alpha) / (m_r + 2 * alpha)
-alpha     = 0.5
+rate_r(w) = df_r(w) / m_r
 ```
 
 Role bias:
 
 ```text
-rawBias(w)        = ln(rate_user(w) / rate_assistant(w))
-normalizedBias(w) = tanh(rawBias(w) / 2)
+normalizedBias(w) = (rate_user(w) - rate_assistant(w)) /
+                    (rate_user(w) + rate_assistant(w))
 ```
 
 Interpretation:
 
 - near +1: user-dominant;
-- near 0: shared;
+- `abs(bias) < 0.18`: shared only if `df_user > 0` AND `df_assistant > 0`;
 - near -1: assistant-dominant.
+
+No pseudocount may turn an unobserved term into shared vocabulary. With both roles present, a term seen only in one role has bias +1 or -1. If either role has no messages, comparison is `insufficient`, rendered neutrally with numerical X bias 0 solely for placement; its absent-role rate is displayed as unavailable and it is excluded from shared insights. Rates are descriptive, not a confidence test. `10/100` user versus `0/4` assistant must be user-dominant, never shared.
+
+Tooltip and existing context drawer show role message DF/total/rate, occurrence counts, content-token totals and occurrences per 1,000 content tokens, plus unique conversation coverage. Both token-frequency numerator and denominator use the same cleaned, NFKC-normalized, grammar/noise/hidden-word-filtered `AnalysisDocument.words` stream. A word occurrence is one accepted atom; a phrase occurrence is one accepted grammatical window of those atoms (up to six Japanese or four English). Count every occurrence of a returned candidate, not only the first in a message. Prefix/suffix or non-topic atoms retained in this ledger remain denominator tokens even when not independently displayed. Phrase windows are **not** added to the denominator. A zero token denominator is unavailable (`null`), not zero frequency. This is not a model/API billing tokenizer.
 
 The product convention places user terms on the left and AI terms on the right:
 
@@ -354,12 +399,16 @@ Before layout:
 
 1. enforce automatic or user-selected minimum message-document frequency;
 2. remove stopwords, noise, and hidden terms;
-3. rank by robust importance;
+3. rank topic mode by its documented selection-only score, broad mode by importance;
 4. preserve a useful mix of user-biased, shared, and AI-biased terms;
-5. avoid filling slots with near-synonymous n-grams;
+5. use actual occurrence-span containment to prefer representative compounds;
 6. select the requested top N.
 
 For 80 terms, a useful initial quota is up to 30 user-side, 20 shared, and 30 AI-side. Redistribute unused capacity.
+
+Display-only compound representation: if at least two occurrences and at least 80% of a short term's occurrences are inside the actual spans of the **same** eligible longer phrase, prefer the longer phrase. A sweep over per-document `[index,end)` spans establishes coverage; substring equality or mere co-occurrence in a message is insufficient. Exactly 80% qualifies; 70% does not. Keep component aggregate statistics, Echo and adoption input unchanged. Prioritize non-redundant representatives, apply side quotas, then fill available slots with unrepresented components if their representative was not selected. Do not impose the former 35% phrase cap or string-length near-duplicate heuristic. Show the number of represented candidate terms separately from physical layout omissions.
+
+The grammatical phrase extractor's bounded vocabulary discovery must not publish partially counted frequencies. Any returned phrase is counted over the full prepared corpus; candidate/position-limit omissions must be disclosed separately. Words and their denominators remain complete within the documented cleaned-text cap. The earlier first-5,000-token discovery / 20,000-candidate NPMI mechanism is not the production path.
 
 ## 12. Echo rate
 
@@ -407,11 +456,12 @@ Suggested algorithm:
 2. derive target x from normalized role bias;
 3. derive stable target y from a hash of term and current filter signature;
 4. sort terms by font size descending with stable tie breakers;
-5. place rectangles using a deterministic expanding spiral or ring search around their targets;
+5. constrain centers to `xTarget ± 0.055 * canvasWidth`; additionally constrain the entire padded box to its own half for user/assistant labels, with a 4-unit center clearance;
 6. reject collisions and positions outside padded bounds;
-7. if placement fails, progressively omit or reduce the smallest terms and emit diagnostics;
-8. never rotate terms by default;
-9. cache by stable data and setting signatures where safe.
+7. exhaust all free Y intervals at a candidate X before trying another X; bounded whole-cloud anchor retries may use offsets 0 / -0.9 / +0.9 of that same allowed drift, never a free canvas search;
+8. retry one global font scale (1.0 to 0.2 by 0.1, common 13-unit floor), retaining the most terms and preferring larger-scale earlier retries on ties; report unplaceable terms in the always-visible caption;
+9. never rotate terms by default;
+10. cache by stable data and setting signatures where safe.
 
 ```ts
 interface LaidOutTerm extends TermStats {
@@ -428,7 +478,9 @@ Use browser-measured bounding boxes when possible. Approximation is acceptable o
 
 Render interactive SVG text. Each term is keyboard-focusable and has an accessible name that summarizes side and frequency.
 
-For viewports up to 620 px, derive a deterministic SVG overview of at most 24 terms from the already-filtered term set. Allocate equal provisional quotas to user, shared, and assistant labels, fill unused quota by global importance, and keep the full requested layout unchanged for the labelled detail mode. The overview uses three simultaneously visible semantic regions and a 13–22 px type range; the detail mode starts centered in a horizontally pannable SVG and reports left/center/right position visually.
+For viewports up to 620 px, derive a deterministic SVG overview of at most 24 terms from the already-filtered laid-out term set. Allocate equal provisional quotas to user, shared, and assistant labels, fill unused quota by global importance, and keep the full requested layout unchanged for the labelled detail mode. Reuse the constrained layout engine at width 390, inset 50, padding 8, a 13–22-unit font range, and at least 44-unit collision height. Observe the actual canvas height so persistent captions do not shrink the overview into microtext. The detail mode starts centered in a horizontally pannable SVG. Show physical omission counts and overview-subset exclusion counts separately. No fixed Y-slot fallback or overlapping slot reuse is allowed.
+
+Axis labels and compact reading notes occupy normal flex flow outside the SVG canvas. Always show the source (synthetic demo versus imported data), providers, observed date period or missing-date label, conversation count, X/size/Y meanings, message-rate definition and quota caveat. Shared does not mean agreement, and displayed side proportions do not represent corpus proportions. SVG contracts unusually wide local-font text into its un-clamped padded collision box; it never stretches a narrow word. Preserve hover breathing room.
 
 Render the full-cloud opening at exactly `100svh`, then the analysis section in ordinary document flow. Do not insert a discovery/action rail or a smaller representative-cloud preview between them. The analysis toolbar may be sticky only inside the analysis section; the two section bounds must meet without negative margins, fixed cloud layers, or visual overlap. Filters never trigger automatic scrolling; the toolbar retains a `クラウド全体を見る` action for returning to the updated cloud.
 
@@ -482,7 +534,7 @@ Cancellation must be cooperative and leave the application reusable. Data cleari
 
 React reducer/state or another small local state approach is sufficient.
 
-Never persist raw conversations. Permitted preferences include:
+The ordinary Web build must never persist raw conversations. The separately authorized private extension keeps its existing account-scoped local history/progress store under `docs/PRIVATE_LOCAL.md`; morphology adds no new durable text storage. Permitted ordinary preferences include:
 
 - term-count choice;
 - analysis filter toggles;
@@ -500,6 +552,8 @@ Export the share card at 2× pixel density:
 - honor hidden terms;
 - use system/local fonts;
 - reproduce the application paper, directional gradient, and deterministic subtle grain without rasterizing private DOM content;
+- reuse layout coordinates and transform fonts by at most the smaller coordinate-axis scale (currently 1.23, versus X 1.76); cap drawn width to the corresponding unpadded glyph allowance so PNG cannot invalidate collision boxes;
+- include the same source/period/count, coordinate/size meanings, shared definition, quota caveat and layout omission count as the screen;
 - sanitize the filename;
 - revoke object URLs after download.
 

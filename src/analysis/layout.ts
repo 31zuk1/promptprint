@@ -6,6 +6,20 @@ export const CLOUD_WIDTH = 1100;
 export const CLOUD_HEIGHT = 620;
 export const CLOUD_PADDING = 18;
 
+export interface LayoutOptions {
+  width?: number;
+  height?: number;
+  padding?: number;
+  semanticInset?: number;
+  maximumFontSize?: number;
+  minimumBoxHeight?: number;
+}
+
+// Maximum displacement is 5.5% of the canvas, never an unrestricted fallback.
+export const MAX_X_DRIFT_RATIO = 0.055;
+export const semanticTargetX = (bias: number, width = CLOUD_WIDTH, inset = 90): number =>
+  width / 2 - bias * (width / 2 - inset);
+
 export interface LayoutResult {
   layout: LaidOutTerm[];
   omitted: TermStats[];
@@ -30,7 +44,8 @@ const stableHash = (value: string): number => {
 const characterWidth = (character: string): number => {
   if (/\s/u.test(character)) return 0.32;
   if (containsCjk(character) || /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(character)) return 1;
-  if (/[A-Z0-9]/u.test(character)) return 0.64;
+  if (/[MWmw@%]/u.test(character)) return 1;
+  if (/[A-Z0-9]/u.test(character)) return 0.72;
   return 0.56;
 };
 
@@ -38,7 +53,7 @@ const measureTerm = (display: string, fontSize: number): Pick<Box, 'width' | 'he
   const emWidth = [...display].reduce((sum, character) => sum + characterWidth(character), 0);
   return {
     // Includes collision breathing room. Actual rendered glyphs sit inside this box.
-    width: Math.min(CLOUD_WIDTH - CLOUD_PADDING * 2, emWidth * fontSize + 14),
+    width: emWidth * fontSize + 14,
     height: fontSize * 1.18 + 10,
   };
 };
@@ -84,93 +99,113 @@ const createFontSizeMapper = (terms: TermStats[]): ((term: TermStats) => number)
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 const tryPlace = (
-  targetX: number,
+  term: TermStats,
   targetY: number,
   width: number,
   height: number,
-  phase: number,
   placed: LaidOutTerm[],
+  options: Required<LayoutOptions>,
+  packingOffset: number,
 ): Pick<Box, 'x' | 'y'> | null => {
-  const minX = CLOUD_PADDING + width / 2;
-  const maxX = CLOUD_WIDTH - CLOUD_PADDING - width / 2;
-  const minY = CLOUD_PADDING + height / 2;
-  const maxY = CLOUD_HEIGHT - CLOUD_PADDING - height / 2;
+  const center = options.width / 2;
+  const targetX = semanticTargetX(term.bias, options.width, options.semanticInset);
+  const drift = options.width * MAX_X_DRIFT_RATIO;
+  const preferredX = targetX + packingOffset * drift;
+  // The entire padded word, not just its center, must stay on its own side.
+  const minX = Math.max(options.padding + width / 2, targetX - drift,
+    term.biasLabel === 'assistant' ? center + 4 + width / 2 : -Infinity);
+  const maxX = Math.min(options.width - options.padding - width / 2, targetX + drift,
+    term.biasLabel === 'user' ? center - 4 - width / 2 : Infinity);
+  const minY = options.padding + height / 2;
+  const maxY = options.height - options.padding - height / 2;
   if (minX > maxX || minY > maxY) return null;
-
-  for (let attempt = 0; attempt < 7_000; attempt += 1) {
-    const radius = attempt === 0 ? 0 : 5.8 * Math.sqrt(attempt);
-    const angle = phase + attempt * 2.399963229728653;
-    const x = targetX + Math.cos(angle) * radius * 1.25;
-    const y = targetY + Math.sin(angle) * radius * 0.82;
-    if (x < minX || x > maxX || y < minY || y > maxY) continue;
-    const box = { x, y, width, height };
-    if (placed.every((term) => !boxesCollide(box, term))) return { x, y };
+  const xs = [minX, maxX, Math.max(minX, Math.min(maxX, preferredX))];
+  for (let offset = 6; offset <= drift; offset += 6) xs.push(targetX - offset, targetX + offset);
+  // Contact edges are useful in dense layouts and avoid grid-dependent gaps.
+  for (const other of placed) {
+    xs.push(other.x - (width + other.width) / 2 - 0.05,
+      other.x + (width + other.width) / 2 + 0.05);
   }
-
-  // Dense 80/120-term views can leave small rectangular gaps that a spiral
-  // skips. An exhaustive deterministic lattice finds the nearest usable gap.
-  let best: { x: number; y: number; score: number } | null = null;
-  const gridStep = 6;
-  const xPhase = (Math.floor(phase * 1_000) % gridStep + gridStep) % gridStep;
-  const yPhase = (Math.floor(phase * 10_000) % gridStep + gridStep) % gridStep;
-  for (let y = minY + yPhase; y <= maxY; y += gridStep) {
-    for (let x = minX + xPhase; x <= maxX; x += gridStep) {
-      const box = { x, y, width, height };
-      if (!placed.every((term) => !boxesCollide(box, term))) continue;
-      const score = (x - targetX) ** 2 * 1.35 + (y - targetY) ** 2;
-      if (!best || score < best.score) best = { x, y, score };
+  xs.sort((a, b) => Math.abs(a - preferredX) - Math.abs(b - preferredX) || a - b);
+  for (const x of new Set(xs)) {
+    if (x < minX || x > maxX) continue;
+    const intervals = placed
+      .filter((other) => Math.abs(x - other.x) < (width + other.width) / 2 + 0.02)
+      .map((other) => [other.y - (height + other.height) / 2 - 0.05,
+        other.y + (height + other.height) / 2 + 0.05] as const)
+      .sort((a, b) => a[0] - b[0]);
+    let cursor = minY;
+    let bestY: number | null = null;
+    const consider = (low: number, high: number) => {
+      if (low > high) return;
+      const y = Math.max(low, Math.min(high, targetY));
+      if (bestY === null || Math.abs(y - targetY) < Math.abs(bestY - targetY)) bestY = y;
+    };
+    for (const [low, high] of intervals) {
+      if (high < cursor) continue;
+      consider(cursor, Math.min(low, maxY));
+      cursor = Math.max(cursor, high);
+      if (cursor > maxY) break;
     }
+    consider(cursor, maxY);
+    // Every free Y interval is exhausted before any horizontal displacement.
+    if (bestY !== null) return { x, y: bestY };
   }
-  return best ? { x: best.x, y: best.y } : null;
+  return null;
 };
 
 /**
  * Coordinates are SVG text centers: render with textAnchor="middle" and
  * dominantBaseline="middle". Width/height are padded collision boxes around x/y.
  */
-export const layoutTermsDetailed = (terms: TermStats[], signature = ''): LayoutResult => {
-  const fontSizeFor = createFontSizeMapper(terms);
+export const layoutTermsDetailed = (
+  terms: TermStats[], signature = '', configuration: LayoutOptions = {},
+): LayoutResult => {
+  const options: Required<LayoutOptions> = {
+    width: CLOUD_WIDTH, height: CLOUD_HEIGHT, padding: CLOUD_PADDING,
+    semanticInset: 90, maximumFontSize: 62, minimumBoxHeight: 0, ...configuration,
+  };
+  const mapFontSize = createFontSizeMapper(terms);
+  const fontSizeFor = (term: TermStats) => Math.min(options.maximumFontSize, mapFontSize(term));
   const ordered = [...terms].sort((left, right) =>
     fontSizeFor(right) - fontSizeFor(left) ||
     right.importance - left.importance ||
     right.rawFrequency - left.rawFrequency ||
     left.term.localeCompare(right.term, 'ja'));
-  const placed: LaidOutTerm[] = [];
-  const omitted: TermStats[] = [];
-
-  for (const term of ordered) {
-    const preferredFontSize = fontSizeFor(term);
-    let completed: LaidOutTerm | null = null;
-    for (let fontSize = preferredFontSize; fontSize >= 13; fontSize -= 2) {
-      const measured = measureTerm(term.display, fontSize);
-      const minimumX = CLOUD_PADDING + measured.width / 2;
-      const maximumX = CLOUD_WIDTH - CLOUD_PADDING - measured.width / 2;
-      const semanticTargetX = CLOUD_WIDTH / 2 - term.bias * (CLOUD_WIDTH / 2 - 90);
-      const targetX = Math.max(minimumX, Math.min(maximumX, semanticTargetX));
-      const hash = stableHash(`${term.term}\u0000${signature}`);
-      const targetY = CLOUD_PADDING + measured.height / 2 +
-        ((hash & 0xffff) / 0xffff) *
-          (CLOUD_HEIGHT - CLOUD_PADDING * 2 - measured.height);
-      const phase = ((hash >>> 16) / 0xffff) * Math.PI * 2;
-      const position = tryPlace(targetX, targetY, measured.width, measured.height, phase, placed);
-      if (!position) continue;
-      completed = {
-        ...term,
-        x: round(position.x),
-        y: round(position.y),
-        fontSize: round(fontSize),
-        width: round(measured.width),
-        height: round(measured.height),
-        color: colorForBias(term.bias),
-      };
-      break;
+  let best: LayoutResult = { layout: [], omitted: ordered };
+  for (const scale of [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]) {
+    for (const packingOffset of [0, -0.9, 0.9]) {
+      const placed: LaidOutTerm[] = [];
+      const omitted: TermStats[] = [];
+      for (const term of ordered) {
+        // One scale for the whole cloud, with a common legibility floor.
+        const fontSize = Math.max(13, fontSizeFor(term) * scale);
+        const measured = measureTerm(term.display, fontSize);
+        measured.height = Math.max(options.minimumBoxHeight, measured.height);
+        const hash = stableHash(`${term.term}\u0000${signature}`);
+        const targetY = options.padding + measured.height / 2 +
+          ((hash & 0xffff) / 0xffff) *
+            (options.height - options.padding * 2 - measured.height);
+        // A crowded center column can prevent two narrower columns fitting.
+        // Deterministic whole-cloud edge-anchor retries remain INSIDE the same
+        // strict semantic interval; each still exhausts Y before moving X.
+        const position = tryPlace(term, targetY, measured.width, measured.height, placed, options, packingOffset);
+        if (!position) { omitted.push(term); continue; }
+        placed.push({
+          ...term,
+          x: round(position.x),
+          y: round(position.y),
+          fontSize: round(fontSize),
+          width: round(measured.width),
+          height: round(measured.height),
+          color: term.biasLabel === 'insufficient' ? '#69656B' : colorForBias(term.bias),
+        });
+      }
+      if (placed.length > best.layout.length) best = { layout: placed, omitted };
+      if (omitted.length === 0) return best;
     }
-
-    if (completed) placed.push(completed);
-    else omitted.push(term);
   }
-
-  return { layout: placed, omitted };
+  return best;
 };
 
 export const layoutTerms = (terms: TermStats[], signature = ''): LaidOutTerm[] =>

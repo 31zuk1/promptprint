@@ -1,4 +1,7 @@
 import type { AnalysisResult } from '../domain/models';
+import { CLOUD_READING, datasetScopeLabel, MESSAGE_RATE_READING, privateDatasetScopeLabel, QUOTA_READING, selectedPeriodLabel, TIMELINE_READING, vocabularySelectionLabel } from '../analysis/presentation';
+import { clampCamera, createSpatialPoints, DEFAULT_CAMERA, type Camera } from '../analysis/spatial';
+import { drawSpatialExport } from './exportSpatial';
 
 const W = 2200;
 const H = 1340;
@@ -49,13 +52,22 @@ const drawPaperGrain = (context: CanvasRenderingContext2D) => {
 
 const aborted = (): DOMException => new DOMException('PNGの生成を中止しました。', 'AbortError');
 
-export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSignal): Promise<Blob> => {
+export interface PngExportOptions {
+  /** No arbitrary strings: identities, titles and source text cannot enter this option. */
+  privateSource?: { partial: boolean };
+  view?: 'mirror' | 'spatial';
+  camera?: Camera;
+}
+
+export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSignal, options: PngExportOptions = {}): Promise<Blob> => {
   if (signal?.aborted) return Promise.reject(aborted());
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('画像を書き出せるブラウザ機能を利用できません。');
+  const spatial = options.view === 'spatial';
+  const camera = clampCamera(options.camera ?? DEFAULT_CAMERA);
 
   context.fillStyle = '#fcfaf6';
   context.fillRect(0, 0, W, H);
@@ -65,7 +77,9 @@ export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSigna
   gradient.addColorStop(0.48, '#f7f2ff');
   gradient.addColorStop(1, '#fff0e7');
   roundedRect(context, 120, 240, 1960, 880, 36);
-  context.fillStyle = gradient;
+  // A left-to-right wash would imply screen-X still represents role after a
+  // camera turn. Spatial mode keeps the established paper/grain, without it.
+  context.fillStyle = spatial ? '#faf9f7' : gradient;
   context.fill();
   context.strokeStyle = '#cbc3b8';
   context.lineWidth = 2;
@@ -79,74 +93,85 @@ export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSigna
   context.font = '400 29px system-ui, -apple-system, sans-serif';
   context.fillStyle = '#625e66';
   context.fillText('AIとの会話から、言葉の指紋を見る。', 126, 194);
+  context.font = '400 20px system-ui, -apple-system, sans-serif';
+  context.fillText(vocabularySelectionLabel(result.display), 126, 226, 1300);
+  if (spatial || result.timeline?.appliedRange) {
+    context.textAlign = 'right';
+    context.font = '600 26px system-ui, -apple-system, sans-serif';
+    context.fillText(`表示期間 ${selectedPeriodLabel(result)}（日本時間）`, 2070, 126, 1200);
+    context.font = '400 22px system-ui, -apple-system, sans-serif';
+    context.fillText(spatial
+      ? `3D · 正投影 · 水平 ${camera.yaw.toFixed(1)}° / 仰角 ${camera.pitch.toFixed(1)}° / 拡大 ${camera.zoom.toFixed(2)}倍`
+      : TIMELINE_READING, 2070, 194, 1200);
+    context.textAlign = 'left';
+  }
 
-  context.font = '700 25px system-ui, -apple-system, sans-serif';
-  context.fillStyle = '#2563eb';
-  context.fillText('あなた ←', 190, 312);
-  context.textAlign = 'center';
-  context.fillStyle = '#7c3aed';
-  context.fillText('共有語彙', W / 2, 312);
-  context.textAlign = 'right';
-  context.fillStyle = '#c2410c';
-  context.fillText('→ AI', 2010, 312);
-  context.textAlign = 'left';
-
-  context.strokeStyle = 'rgba(23, 21, 28, .18)';
-  context.lineWidth = 2;
-  context.setLineDash([8, 12]);
-  context.beginPath();
-  context.moveTo(W / 2, 340);
-  context.lineTo(W / 2, 1050);
-  context.stroke();
-  context.setLineDash([]);
-
-  for (const term of result.layout) {
-    context.font = `700 ${Math.round(term.fontSize * 1.75)}px system-ui, -apple-system, sans-serif`;
-    context.fillStyle = term.color;
+  let spatialLabelCount = 0;
+  if (spatial) {
+    spatialLabelCount = drawSpatialExport(context, createSpatialPoints(result.layout, result.summary), camera);
+  } else {
+    context.font = '700 25px system-ui, -apple-system, sans-serif';
+    context.fillStyle = '#2563eb';
+    context.fillText('あなた ←', 190, 312);
     context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(term.display, 132 + term.x * SCALE_X, 320 + term.y * SCALE_Y);
+    context.fillStyle = '#7c3aed';
+    context.fillText(result.summary.userMessageCount && result.summary.assistantMessageCount ? '共有語彙' : '比較材料不足', W / 2, 312);
+    context.textAlign = 'right';
+    context.fillStyle = '#c2410c';
+    context.fillText('→ AI', 2010, 312);
+    context.textAlign = 'left';
+
+    context.strokeStyle = 'rgba(23, 21, 28, .18)';
+    context.lineWidth = 2;
+    context.setLineDash([8, 12]);
+    context.beginPath();
+    context.moveTo(W / 2, 340);
+    context.lineTo(W / 2, 1050);
+    context.stroke();
+    context.setLineDash([]);
+
+    for (const term of result.layout) {
+      // Font geometry cannot grow faster than the vertical coordinate scale.
+      // Using 1.75 here previously made collision-free SVG words overlap in PNG.
+      context.font = `700 ${term.fontSize * Math.min(SCALE_X, SCALE_Y)}px system-ui, -apple-system, sans-serif`;
+      context.fillStyle = term.color;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(term.display, 132 + term.x * SCALE_X, 320 + term.y * SCALE_Y,
+        (term.width - 14) * Math.min(SCALE_X, SCALE_Y));
+    }
   }
 
   context.textAlign = 'left';
   context.textBaseline = 'alphabetic';
-  context.font = '600 27px system-ui, -apple-system, sans-serif';
+  context.font = '600 23px system-ui, -apple-system, sans-serif';
   context.fillStyle = '#17151c';
   const summary = result.summary;
-  context.fillText(`${summary.conversationCount} 会話`, 130, 1204);
-  context.fillText(`${summary.userMessageCount + summary.assistantMessageCount} 発言`, 325, 1204);
-  context.fillText(`${summary.analyzedTermCount} 語を分析`, 545, 1204);
-
-  const dateFormat = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' });
-  const dateRange = summary.dateStart !== null && summary.dateEnd !== null
-    ? `${dateFormat.format(summary.dateStart)} – ${dateFormat.format(summary.dateEnd)}`
-    : '日時情報なし';
+  const scopeLabel = options.privateSource ? privateDatasetScopeLabel(summary, options.privateSource.partial) : datasetScopeLabel(summary, result.timeline?.sourceProviders);
+  context.fillText(spatial
+    ? `${scopeLabel} · ${summary.userMessageCount + summary.assistantMessageCount}発言 · 点 ${result.layout.length}語 · 文字ラベル省略 ${result.layout.length - spatialLabelCount}語 · 2D配置による省略 ${result.display.layoutOmittedCount}語`
+    : `${scopeLabel} · ${summary.userMessageCount + summary.assistantMessageCount}発言 · 表示 ${result.layout.length}語 · 配置のため省略 ${result.display.layoutOmittedCount}語`, 130, 1165, 1940);
   context.font = '400 22px system-ui, -apple-system, sans-serif';
   context.fillStyle = '#6f6962';
-  context.fillText(dateRange, 790, 1204);
-
-  const legend = [
-    { label: 'あなた寄り', color: '#2563eb' },
-    { label: '共有語彙', color: '#7c3aed' },
-    { label: 'AI寄り', color: '#c2410c' },
-  ];
-  let legendX = 1210;
-  for (const item of legend) {
-    context.beginPath();
-    context.arc(legendX, 1195, 8, 0, Math.PI * 2);
-    context.fillStyle = item.color;
-    context.fill();
-    context.font = '600 24px system-ui, -apple-system, sans-serif';
-    context.fillStyle = '#625e66';
-    context.fillText(item.label, legendX + 18, 1204);
-    legendX += 205;
+  if (spatial) {
+    context.fillText('X＝相対的な使用傾向（−1 あなた / 0 均衡 / +1 AI）。回転後の画面左右ではなく、X軸を読みます。', 130, 1200, 1940);
+    context.fillText('Y＝役割別の発言出現率の均等平均（片役割は観測側のみ）。Z＝選択期間の会話カバー率。各率は0〜100%固定。', 130, 1235, 1940);
+    context.fillText('点と文字は一定サイズ。近接は語の意味の類似を示しません。表示語数の比率は元データの比率ではありません。', 130, 1270, 1940);
+  } else {
+    context.fillText(CLOUD_READING, 130, 1200);
+    context.fillText(MESSAGE_RATE_READING, 130, 1235);
+    context.fillText(QUOTA_READING, 130, 1270);
   }
 
   context.font = '400 23px system-ui, -apple-system, sans-serif';
   context.fillStyle = '#6f6962';
-  context.fillText('端末内で解析 · 原文は画像に含まれません', 130, 1284);
+  context.fillText(spatial && options.privateSource
+    ? '個人用・非公開 · 端末内で保存・解析 · 原文は画像に含まれません'
+    : '端末内で解析 · 原文は画像に含まれません', 130, 1310);
   context.textAlign = 'right';
-  context.fillText('Promptprint · 言葉の指紋', 2070, 1284);
+  context.fillText(!summary.userMessageCount || !summary.assistantMessageCount
+    ? spatial ? '灰色の四角＝比較材料不足（共有ではありません）' : '灰色＝比較材料不足（共有ではありません）'
+    : spatial ? '点は重なる場合があります · 線はラベルとの対応' : 'Promptprint · 言葉の指紋', 2070, 1310);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -160,8 +185,8 @@ export const createPromptprintPng = (result: AnalysisResult, signal?: AbortSigna
   });
 };
 
-export const downloadPromptprintPng = async (result: AnalysisResult, signal?: AbortSignal): Promise<void> => {
-  const blob = await createPromptprintPng(result, signal);
+export const downloadPromptprintPng = async (result: AnalysisResult, signal?: AbortSignal, options: PngExportOptions = {}): Promise<void> => {
+  const blob = await createPromptprintPng(result, signal, options);
   if (signal?.aborted) throw aborted();
   const url = URL.createObjectURL(blob);
   activeObjectUrls.add(url);

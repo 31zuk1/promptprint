@@ -27,17 +27,26 @@ const MAX_CONTENT_DEPTH = 6;
 export const MAX_CONTENT_ITEMS = 4_096;
 
 const EXCLUDED_CONTENT_TYPES = new Set([
+  'analysis',
   'audio_transcription',
   'computer_initialize_state',
   'computer_output',
   'execution_output',
   'image_asset_pointer',
   'model_editable_context',
+  'reasoning',
+  'reasoning_recap',
   'system_error',
   'tether_browsing_display',
+  'thoughts',
   'tool_result',
   'user_editable_context',
 ]);
+
+// Thinking-model exports can carry internal text with an ordinary assistant
+// role and content_type="text". Legacy messages have no channel; visible
+// final/commentary text remains eligible under the existing role rules.
+const EXCLUDED_CHANNELS = new Set(['analysis', 'reasoning', 'thoughts']);
 
 interface ExtractedText {
   text: string;
@@ -85,6 +94,10 @@ const shouldSkipMessage = (message: UnknownRecord): boolean => {
   if (recipient && recipient !== 'all' && recipient !== 'none') return true;
 
   const metadata = isRecord(message.metadata) ? message.metadata : null;
+  const channel = stringValue(message.channel)?.trim().toLocaleLowerCase('en-US');
+  const metadataChannel = stringValue(metadata?.channel)?.trim().toLocaleLowerCase('en-US');
+  if ((channel && EXCLUDED_CHANNELS.has(channel)) ||
+    (metadataChannel && EXCLUDED_CHANNELS.has(metadataChannel))) return true;
   if (metadata?.is_visually_hidden_from_conversation === true) return true;
   if (metadata && (
     typeof metadata.tool_name === 'string' ||
@@ -420,6 +433,9 @@ const parseGraphConversation = (
   }
 
   const messages: NormalizedMessage[] = [];
+  // Only consider the selected path. A discarded branch can reuse a message
+  // ID and must never reserve that ID ahead of the selected visible answer.
+  const seenMessageIds = new Set<string>();
   let skipped = 0;
   let truncatedMessages = 0;
   let messagesDroppedByBudget = 0;
@@ -441,6 +457,11 @@ const parseGraphConversation = (
       skipped += 1;
       continue;
     }
+    if (parsed.rawId && seenMessageIds.has(parsed.rawId)) {
+      skipped += 1;
+      continue;
+    }
+    if (parsed.rawId) seenMessageIds.add(parsed.rawId);
     if (parsed.truncated) truncatedMessages += 1;
     messages.push(normalizeMessage(parsed, id, messages.length, nodeId));
   }
@@ -468,6 +489,7 @@ const parseDirectConversation = (
 ): ConversationParseOutcome => {
   const rawMessages = Array.isArray(value.messages) ? value.messages : [];
   const messages: NormalizedMessage[] = [];
+  const seenMessageIds = new Set<string>();
   let skipped = 0;
   let truncatedMessages = 0;
   let messagesDroppedByBudget = 0;
@@ -485,6 +507,11 @@ const parseDirectConversation = (
       skipped += 1;
       continue;
     }
+    if (parsed.rawId && seenMessageIds.has(parsed.rawId)) {
+      skipped += 1;
+      continue;
+    }
+    if (parsed.rawId) seenMessageIds.add(parsed.rawId);
     if (parsed.truncated) truncatedMessages += 1;
     messages.push(normalizeMessage(parsed, id, messages.length, String(index + 1)));
   }
@@ -630,7 +657,7 @@ export const parseChatGptExport = (
     diagnostics.warnings.push(diagnostic(
       'CHATGPT_RECORDS_SKIPPED',
       'warning',
-      `${diagnostics.recordsSkipped.toLocaleString('ja-JP')}件の未対応・空・システム／ツール系・上限超過レコードを読み飛ばしました。`,
+      `${diagnostics.recordsSkipped.toLocaleString('ja-JP')}件の未対応・空・重複・非表示・システム／ツール系・上限超過レコードを読み飛ばしました。`,
       safeSource,
     ));
   }

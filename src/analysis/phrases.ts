@@ -1,4 +1,4 @@
-import { canonicalizeTerm, containsCjk, type SurfaceToken } from './tokenize';
+import { canonicalizeTerm, containsCjk, isStopword, type SurfaceToken } from './tokenize';
 
 export interface PhraseDocument {
   messageId: string;
@@ -9,24 +9,34 @@ export interface PhraseDocument {
 
 export interface PhraseOccurrence extends SurfaceToken {
   kind: 'phrase';
-  tokenCount: 2 | 3;
+  tokenCount: number;
   association: number;
 }
 
 export interface PhraseExtractionResult {
   byMessage: Map<string, PhraseOccurrence[]>;
   documentFrequency: Map<string, number>;
+  limited: boolean;
+  /** Bounded candidate discovery may omit whole families. Every returned
+   * family still has complete frequencies and occurrence spans. */
+  selection?: {
+    candidateCapacityReached: boolean;
+    examinedFamilies: number;
+    supportedFamilies: number;
+    retainedFamilies: number;
+    omittedSupportedFamilies: number;
+    retainedOccurrences: number;
+  };
 }
 
 export interface PhraseExtractionOptions {
   minimumDocumentFrequency?: number;
   minimumAssociation?: number;
   maximumCandidates?: number;
+  maximumOccurrences?: number;
 }
 
 interface CandidateOccurrence {
-  messageId: string;
-  conversationId: string;
   term: string;
   surface: string;
   index: number;
@@ -35,10 +45,11 @@ interface CandidateOccurrence {
 }
 
 interface CandidateAggregate {
-  occurrences: CandidateOccurrence[];
   messages: Set<string>;
   conversations: Set<string>;
   componentTerms: string[];
+  /** All occurrences are unspaced compounds, not accidental word lists. */
+  contiguous: boolean;
 }
 
 const phraseSeparatorIsValid = (separator: string): boolean =>
@@ -56,6 +67,7 @@ const createCandidate = (
 ): CandidateOccurrence | null => {
   const parts = document.tokens.slice(start, start + size);
   if (parts.length !== size) return null;
+  if (parts.some((part) => isStopword(part.term))) return null;
 
   let term = parts[0]?.term ?? '';
   let surface = parts[0]?.surface ?? '';
@@ -73,10 +85,11 @@ const createCandidate = (
   const first = parts[0];
   const last = parts.at(-1);
   if (!first || !last) return null;
+  // Defensive contract for alternate tokenizers: a split stopword must not be
+  // reconstructed as a phrase, even when its individual fragments look valid.
+  if (isStopword(document.text.slice(first.index, last.end))) return null;
 
   return {
-    messageId: document.messageId,
-    conversationId: document.conversationId,
     term: canonicalizeTerm(term),
     surface,
     index: first.index,
@@ -121,8 +134,11 @@ export const extractPhrases = (
   }
 
   const candidates = new Map<string, CandidateAggregate>();
-  let storedOccurrenceCount = 0;
-  const maximumStoredOccurrences = Math.max(10_000, maximumCandidates * 25);
+  let candidateDocumentCount = 0;
+  const maximumStoredOccurrences = Math.max(1, options.maximumOccurrences ?? 500_000);
+  const limitedResult = (): PhraseExtractionResult => ({
+    byMessage: new Map(), documentFrequency: new Map(), limited: true,
+  });
 
   for (const document of documents) {
     const seenInMessage = new Set<string>();
@@ -136,20 +152,19 @@ export const extractPhrases = (
         if (!aggregate) {
           if (candidates.size >= maximumCandidates) continue;
           aggregate = {
-            occurrences: [],
             messages: new Set(),
             conversations: new Set(),
             componentTerms: document.tokens
               .slice(start, start + size)
               .map((token) => token.term),
+            contiguous: !/\s/u.test(document.text.slice(occurrence.index, occurrence.end)),
           };
           candidates.set(key, aggregate);
         }
+        aggregate.contiguous &&= !/\s/u.test(document.text.slice(occurrence.index, occurrence.end));
         if (!seenInMessage.has(key)) {
-          if (storedOccurrenceCount < maximumStoredOccurrences) {
-            aggregate.occurrences.push(occurrence);
-            storedOccurrenceCount += 1;
-          }
+          candidateDocumentCount += 1;
+          if (candidateDocumentCount > maximumStoredOccurrences) return limitedResult();
           aggregate.messages.add(document.messageId);
           aggregate.conversations.add(document.conversationId);
         }
@@ -161,32 +176,45 @@ export const extractPhrases = (
   const requireMultipleConversations = new Set(documents.map((document) => document.conversationId)).size >= 4;
   const byMessage = new Map<string, PhraseOccurrence[]>();
   const documentFrequency = new Map<string, number>();
+  const accepted = new Map<string, number>();
 
   const orderedCandidates = [...candidates.entries()].sort(([left], [right]) => left.localeCompare(right, 'ja'));
-  for (const [, aggregate] of orderedCandidates) {
+  for (const [key, aggregate] of orderedCandidates) {
     const messageDf = aggregate.messages.size;
     if (messageDf < minimumDocumentFrequency) continue;
-    if (requireMultipleConversations && aggregate.conversations.size < 2) continue;
+    // A focused thread may be the only place a real compound appears. Require
+    // three distinct messages and literal adjacency for this exception; spaced
+    // word lists still need support from multiple conversations.
+    if (requireMultipleConversations && aggregate.conversations.size < 2 &&
+      !(aggregate.contiguous && messageDf >= 3)) continue;
     const componentDfs = aggregate.componentTerms.map((term) => wordDocumentFrequency.get(term) ?? 0);
     const association = normalizedPmi(messageDf, componentDfs, documentCount);
     if (association < minimumAssociation) continue;
 
-    const phraseTerm = aggregate.occurrences[0]?.term;
-    if (!phraseTerm) continue;
-    documentFrequency.set(phraseTerm, messageDf);
-    for (const occurrence of aggregate.occurrences) {
-      const list = byMessage.get(occurrence.messageId) ?? [];
-      list.push({
-        term: occurrence.term,
-        surface: occurrence.surface,
-        index: occurrence.index,
-        end: occurrence.end,
-        kind: 'phrase',
-        tokenCount: occurrence.tokenCount,
-        association,
-      });
-      byMessage.set(occurrence.messageId, list);
+    accepted.set(key, association);
+  }
+
+  // Candidate discovery is bounded, but frequencies for retained candidates
+  // cover the COMPLETE prepared token stream, including repeats in a message.
+  // Never return partial phrase counts if the occurrence budget is exceeded.
+  let storedOccurrenceCount = 0;
+  for (const document of documents) {
+    const seen = new Set<string>();
+    const list: PhraseOccurrence[] = [];
+    for (let start = 0; start < document.tokens.length && accepted.size; start += 1) {
+      for (const size of [2, 3] as const) {
+        const occurrence = createCandidate(document, start, size);
+        if (!occurrence) continue;
+        const association = accepted.get(`${size}\u0000${occurrence.term}`);
+        if (association === undefined) continue;
+        storedOccurrenceCount += 1;
+        if (storedOccurrenceCount > maximumStoredOccurrences) return limitedResult();
+        list.push({ ...occurrence, kind: 'phrase', association });
+        seen.add(occurrence.term);
+      }
     }
+    if (list.length) byMessage.set(document.messageId, list);
+    for (const term of seen) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
   }
 
   for (const occurrences of byMessage.values()) {
@@ -194,5 +222,5 @@ export const extractPhrases = (
       left.index - right.index || right.tokenCount - left.tokenCount || left.term.localeCompare(right.term, 'ja'));
   }
 
-  return { byMessage, documentFrequency };
+  return { byMessage, documentFrequency, limited: false };
 };

@@ -7,6 +7,7 @@ import type {
 } from '../domain/models';
 
 export const ANALYSIS_STAGES = [
+  '端末内の品詞辞書を準備中',
   'ファイルを確認中',
   '会話を読み込み中',
   'テキストを正規化中',

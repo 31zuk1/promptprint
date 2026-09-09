@@ -2,6 +2,39 @@
 
 Every item marked **MUST** is part of the definition of done. A **SHOULD** item may remain incomplete only when its tradeoff is recorded in `docs/EXECPLAN.md`.
 
+## Topic extraction rebuild regression contract (2026-09-09)
+
+- **MUST** production analysis uses bundled Japanese morphology and contextual English POS; no heuristic-only fallback after dictionary errors. Only local/static-own-origin model assets may be loaded, never a runtime CDN or external NLP call.
+- **MUST** held-out natural-language fixtures cover at least ten subject families, long observed compounds, noun modifiers/prefixes, independent component use, acknowledgments, source notation and unknown technical names. Actual source offsets and complete counts are testable.
+- **MUST** large-corpus candidate pressure does not discard all noun phrases. Resource caps omit whole candidates; every displayed candidate retains its complete observed counts and positions, and limits are disclosed.
+
+## Topic selection regression contract (2026-09-09)
+
+- **MUST** repeated procedural prose across mixed topics does not displace actual subject terms in the default mode; generic-only input yields an explained empty visualization, not filler or an import failure.
+- **MUST** meaningful short words, previously unseen topic vocabulary and recurring all-conversation themes remain eligible. No topical whitelist, external LLM or third-party runtime request; static same-origin dictionary assets are permitted.
+- **MUST** exact lexical-boundary repairs retain source offsets; stopwords/hidden words/punctuation are never bridged. Keep whole compounds and independent uses, including generic-component Japanese and English technical phrases.
+- **MUST** topic/broad toggles leave surviving-term DF, role/token totals/rates, bias, importance and source contexts identical. Selection scores must not become 2D size or 3D coordinates.
+- **MUST** completed mode/exclusion counts accompany screen and PNG, including empty/dated results; use the same eligibility in insights/provider summaries and ordinary/private views.
+- **MUST** verify desktop/mobile, 2D/3D, broad recovery, hiding, local-only storage/network/console guards and PNG privacy; keep the original exact mobile-24 semantic layout fixture and all one-sided stress cases.
+
+## Optional 3D view regression contract (2026-09-09)
+
+- **MUST** default 2D remains unchanged, and returning from 3D restores the same selected statistics and deterministic layout.
+- **MUST** X=−bias, Y=role-balanced message incidence, Z=current filtered conversation coverage; validate hand-counted data, missing roles, zero denominators and date changes. No jitter, data-extrema scaling or semantic-distance claim.
+- **MUST** all selected points, including 120 coincident points, retain exact metric coordinates and constant size. Count text-label and inherited layout omissions separately; every point remains selectable even if obscured.
+- **MUST** projection is deterministic, immutable and bounded at desktop/mobile/camera extremes; axis names and meanings remain visible. Camera operations affect only projection and pause playback.
+- **MUST** keyboard, pointer, selector/context/hiding, empty dates, 320/390 px layouts and current-camera aggregate-only PNG work in the same screen.
+- **MUST** Web storage/network/console guards, private offline storage isolation and all original 2D/time/privacy regressions remain intact. No source acquisition, push or publication is authorized by this feature.
+
+## Chronological preview regression contract (2026-09-09)
+
+- **MUST** custom inclusive JST dates reject invalid/reversed bounds and distinguish unknown dates from conversation-date fallback, including epoch zero and leap days.
+- **MUST** day/month window and cumulative playback preserve empty periods, clip partial calendar months and refuse more than 366 frames without truncation.
+- **MUST** each frame recomputes real message denominators, shared classification and deterministic collision-free semantic placement.
+- **MUST** no next request before completion plus dwell; pause/manual filters/context/export/hidden/unmount cannot leave recurring frame requests. Empty/last frames finish normally.
+- **MUST** committed dates, source provenance and counts stay aligned with the cloud and PNG, including empty periods; desktop/mobile controls remain reachable and do not overlap the cloud.
+- **MUST** ordinary storage/network guards and private offline restore remain intact. Synthetic tests cannot be reported as real-history validation.
+
 ## A. Repository and startup
 
 - [x] **MUST** `pnpm install` succeeds from a fresh checkout.
@@ -146,6 +179,18 @@ At approximately 390 × 844:
 - [x] **MUST** `docs/EXECPLAN.md` records final progress, decisions, command evidence, visual evidence, and known gaps.
 
 ## Completion evidence
+
+### Semantic/statistical regression acceptance — 2026-09-09
+
+- [x] **MUST** bias-derived X displacement is bounded to 5.5% of canvas width and the entire padded user/assistant word stays on its own half. Vertical collision avoidance, shared global scaling and counted omission replace unrestricted fallback movement.
+- [x] **MUST** all-one-side 40/80/120 terms in both directions remain bounded, non-overlapping and deterministic on desktop, mobile overview/detail and exported PNG; mixed-120 retention remains >=90 in the existing unit fixture.
+- [x] **MUST** shared requires observations in both roles and close empirical message occurrence rates. `10/100` versus `0/4` is never shared; absent-role data is visibly comparison-insufficient.
+- [x] **MUST** tooltip/context metrics show role message DF/total/rate, consistently defined token occurrence counts/totals/rates per 1,000 content tokens, and conversation coverage. No length-correction claim is made.
+- [x] **MUST** compound representation uses actual positions with a documented >=80% containment threshold (at least two covered occurrences), retains independent-use candidates and leaves aggregate statistics untouched. Repeats and work-limit fallback are tested.
+- [x] **MUST** meanings of X/size/Y, demo/import source, provider, observed period, conversation count, quota caveat and omission counts are always visible within the existing cloud and included in PNG.
+- [x] **MUST** `pnpm check` and `pnpm e2e` pass with the existing privacy/network/console guards preserved. Final evidence: 90 unit tests and 16 Chromium E2E tests; desktop/mobile/PNG artifacts visually inspected. Only synthetic demo and export-shaped fixtures were supplied; this is not real-history validation.
+
+### General completion procedure
 
 Before checking the final boxes:
 

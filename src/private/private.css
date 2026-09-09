@@ -1,0 +1,54 @@
+.private-app { min-height: 100svh; --ink-muted: var(--ink-soft); }
+.private-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px 40px; border-bottom: 1px solid var(--line); }
+.private-header > span { color: var(--ink-muted); font-size: 13px; }
+.private-control, .private-progress, .private-empty, .private-footer { width: min(1120px, calc(100% - 64px)); margin-inline: auto; }
+.private-control { padding: 52px 0 32px; }
+.private-control h1 { font-size: clamp(30px, 4.2vw, 56px); line-height: 1.3; letter-spacing: -.045em; margin: 10px 0 20px; }
+.private-break { display: none; }
+.private-description { max-width: 720px; line-height: 1.8; color: var(--ink-muted); }
+.private-form { display: grid; grid-template-columns: 1fr 240px; gap: 20px; margin-top: 30px; }
+.private-form label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; }
+.private-form input, .private-form select { width: 100%; min-width: 0; height: 52px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--ink); background: var(--paper); font: inherit; }
+.private-actions { display: flex; gap: 12px; grid-column: 1 / -1; }
+.private-actions > .button { min-height: 52px; padding-inline: 24px; }
+.private-boundary { max-width: 900px; margin-top: 18px; font-size: 13px; line-height: 1.8; color: var(--ink-muted); }
+.private-alert { padding: 12px 16px; border-left: 3px solid #a83824; background: #fff0e7; font-size: 14px; line-height: 1.7; }
+.private-notice { font-size: 14px; line-height: 1.7; }
+.private-progress { padding: 24px 0 30px; border-top: 1px solid var(--line); }
+.private-progress__heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.private-progress__heading > span { font-size: 13px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.private-stats { display: grid; grid-template-columns: repeat(6, 1fr); margin: 24px 0; }
+.private-stats > div { border-left: 1px solid var(--line); padding: 0 16px; }
+.private-stats > div:first-child { border-left: 0; padding-left: 0; }
+.private-stats dt { color: var(--ink-muted); font-size: 13px; }
+.private-stats dd { margin: 5px 0 0; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.private-stats small { font-size: 13px; margin-left: 4px; font-weight: 400; }
+.private-progress > p { color: var(--ink-muted); font-size: 13px; line-height: 1.8; margin: 7px 0; overflow-wrap: anywhere; }
+.private-dashboard .dashboard__opening { min-height: 700px; }
+.private-dashboard .dashboard__intro h2 { font-size: clamp(28px, 3.5vw, 46px); line-height: 1.3; letter-spacing: -.04em; margin: 12px 0 20px; }
+.private-empty { padding: 80px 0; border-top: 1px solid var(--line); text-align: center; }
+.private-empty h2 { font-size: 22px; font-weight: 600; }
+.private-empty p { margin-top: 16px; color: var(--ink-muted); font-size: 14px; line-height: 1.8; }
+.private-footer { padding: 32px 0 48px; display: flex; flex-wrap: wrap; align-items: start; gap: 24px; border-top: 1px solid var(--line); }
+.private-footer > div:first-child { flex: 1 1 650px; }
+.private-footer strong { font-size: 14px; }
+.private-footer p { color: var(--ink-muted); font-size: 13px; line-height: 1.8; margin-top: 10px; }
+.private-clear { display: flex; flex-direction: column; align-items: start; gap: 8px; }
+@media (max-width: 800px) {
+  .private-header { padding: 20px 24px; }
+  .private-stats { grid-template-columns: repeat(3, 1fr); gap: 20px 0; }
+  .private-stats > div:nth-child(4) { padding-left: 0; border-left: 0; }
+}
+@media (max-width: 620px) {
+  .private-header { padding: 18px 20px; flex-wrap: wrap; gap: 8px; }
+  .private-control, .private-progress, .private-empty, .private-footer { width: calc(100% - 40px); }
+  .private-control { padding-top: 32px; }
+  .private-break { display: inline; }
+  .private-form { grid-template-columns: 1fr; }
+  .private-actions { flex-direction: column; }
+  .private-stats dd { font-size: 23px; }
+  .private-stats small { display: block; font-size: 12px; margin: 0; }
+  .private-stats > div { padding-inline: 12px; }
+  .private-progress__heading { align-items: start; flex-direction: column; gap: 6px; }
+  .private-dashboard .dashboard__opening { min-height: 844px; }
+}

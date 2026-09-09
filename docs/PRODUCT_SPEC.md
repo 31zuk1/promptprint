@@ -1,5 +1,33 @@
 # Promptprint PoC — Product specification
 
+## Source-grounded topic vocabulary (redesign, 2026-09-09)
+
+Default **話題を優先** selects observed nouns and recurring grammatical noun phrases, not arbitrary wordlike fragments or every frequent expression. Japanese uses a bundled morphological dictionary and English uses a bundled contextual part-of-speech model. Both run locally in the analysis worker. Particles, auxiliary forms, acknowledgments, punctuation and removed source spans remain phrase boundaries. The model does not invent topic labels, merge synonyms, call an external LLM, or fill an empty cloud with rejected candidates.
+
+Topic selection requires eligible nominal usage in at least half of the messages containing a candidate, then ranks it by repeated-message evidence and inverse conversation coverage. This favors more specific subjects over expressions repeated indiscriminately across conversations, while retaining a nonzero weight for themes present throughout the corpus. It is corpus-local lexical selection, not proof of semantic understanding or a universal relevance score. Standalone procedural forms are omitted; compounds such as 説明変数 and 回答率 can retain their actual meaning-bearing constituents. English adjective-plus-noun phrases such as general relativity remain possible without treating every English word as a noun.
+
+**使用語を広く** restores eligible non-topic vocabulary for inspecting wording and response style. Both modes use the same observed-form lexical ledger, message denominators, token totals, role rates, bias, importance and source spans. No lemma is substituted for a word the speaker did not actually use. The new dictionary-based ledger can differ from earlier releases; changing only the display mode never changes surviving-term measurements. The selection score is not the font-size or coordinate metric.
+
+Noun phrases require two distinct supporting messages, including within one focused conversation. Japanese compounds contain up to six adjacent atoms; English phrases up to four, with a noun head. Punctuation, Japanese whitespace lists, verbs, removed grammar and hidden spans cannot be bridged. Independently used components remain eligible under the existing positional-containment rule. Dictionary mistakes, unfamiliar vocabulary and pasted material can still affect the result; source-context inspection remains essential.
+
+The committed selection mode and candidate exclusion count accompany the cloud and PNG. Counts distinguish display-policy exclusions, compound representation, physical layout omissions and the mobile overview subset. The selected word count is an upper limit. The same eligibility policy covers 2D, 3D, timeline frames, insights and provider summaries; Echo and adoption calculations still use the common prepared corpus, with only adoption presentation filtered. Clicking a selected word opens its actual source context. Broad mode does not restore punctuation, grammatical noise, unsafe fragments or hidden words. Dictionary loading failure is an explicit recoverable error, never a silent return to the old heuristic-only extraction.
+
+## Selectable 3D distribution (owner request, 2026-09-09)
+
+The default remains **2D ミラー**. **3D 分布** is an alternate view in the same dashboard, not a new screen. It answers whether vocabulary with similar role bias and message incidence is spread across many conversations or concentrated in a few. X is −bias (user −1, AI +1); Y is the equal-weight mean of the role-specific message incidence rates; Z is the fraction of currently selected conversations containing the term. When only one role is present, Y uses that observed role and X=0 is marked comparison-insufficient, never shared. Rates use fixed 0–100% domains across dates; X uses −1–1.
+
+The same selected terms are used in both views, including existing hidden/compound/selection/2D-layout omissions. Every selected term has an exact point; overlaps are not displaced or removed. Labels are selectively placed with leaders; their omission count is visible, and the selector exposes all points even at identical coordinates. Empty or sparse results are explicit. Point and label sizes are constant and do not encode a fourth metric. Distance is not semantic similarity; these are related descriptive statistics, not an independent topic space.
+
+The orthographic view supports bounded rotation/zoom, keyboard arrows, reset, and touch-safe buttons. After rotation, screen-left is not itself user dominance: read the labeled X axis. The paper/palette remains familiar, but a screen-left/right gradient is deliberately absent in 3D. View/camera changes pause chronological playback without reanalysis or transmission. Period filtering and playback also work in 3D. PNG uses the current mode, camera, committed period and aggregate-only privacy rules; output dimensions are independently fitted, so label selection can differ from the screen.
+
+## Local chronological preview (owner request, 2026-09-09)
+
+The existing cloud has a compact date/playback control, shared by Web import/demo and the isolated private build. Dates are inclusive Japanese calendar days (JST), based on each message's date, falling back to conversation creation then update. All-time retains undated messages; bounded periods exclude them and disclose the count. A conversation can therefore contribute different messages to different periods. Missing conversation dates are never invented from import/fetch time.
+
+Choose arbitrary start/end bounds, or day/month playback of that range. Window mode shows that calendar period only; cumulative mode shows the chosen start through the current period end. Empty periods remain visible. The last frame stops automatically; replay after the last frame starts over. Pause retains the current/in-flight frame, and resume continues from there. Each completed frame dwells for 1/2/4 seconds before the next analysis begins; processing time is additional. No frames are interpolated, cached as a movie, or uploaded.
+
+Visible dates belong to the completed result, not the next requested frame. PNG is a still image of that result and includes the selected period. Font sizes remain relative within each frame, not a calibrated absolute scale across periods. Existing X/size/Y explanations remain visible. Open-ended filtering is allowed, but playback requires both bounds and at most 366 frames; choose monthly playback or a shorter range for longer histories.
+
 ## 1. Product thesis
 
 Chat histories contain two related but distinct vocabularies:
@@ -139,8 +167,8 @@ Small deterministic shade variation is acceptable when contrast remains sufficie
 Hover or keyboard focus shows:
 
 - term;
-- user document frequency and normalized rate;
-- AI document frequency and normalized rate;
+- user and AI message-document frequency, role message total and empirical message occurrence rate (the proportion of that role's messages containing the term, not length-adjusted);
+- role occurrences per 1,000 cleaned content tokens and their occurrence/token totals;
 - conversation coverage;
 - user / shared / AI bias label;
 - provider coverage when multiple providers are present.
@@ -171,7 +199,9 @@ Show important, strongly AI-biased terms. Describe the imported corpus only; do 
 
 ### 8.3 共有語彙
 
-Show important terms with near-balanced role-normalized rates.
+Show important terms actually observed in both roles with near-balanced empirical message occurrence rates (`abs(bias) < 0.18`). A zero observation is not shared. If a role has no analyzed messages, use an explicit neutral comparison-insufficient state and exclude the terms from shared insights.
+
+The cloud always explains: left/right = relative usage tendency, size = logarithmic message-document frequency/conversation-coverage score, vertical = no meaning. Keep source (synthetic demo or imported data), providers, period and conversation count visible. Disclose quota selection and show layout omissions; displayed word-count ratios are not corpus ratios. A user/AI-dominant word must never cross to the opposite half to fill space. Prefer vertical displacement and bounded X movement; use common size scaling or omission on desktop, mobile and PNG.
 
 ### 8.4 語彙エコー率
 
@@ -273,7 +303,9 @@ All term interactions work with keyboard focus and Enter. Interactive elements h
 
 ## 14. Non-goals
 
-Do not build:
+The ordinary Web product retains these non-goals. The owner's separately authorized, unpublished personal extension is governed by `docs/PRIVATE_LOCAL.md`; this extraction redesign does not add acquisition permissions, remote services or publication.
+
+Do not build into the ordinary Web product:
 
 - personality or mental-health diagnosis;
 - automatic public sharing;
@@ -287,7 +319,7 @@ Do not build:
 
 The UI or documentation must state:
 
-- segmentation and phrase extraction are heuristic;
+- local morphological/POS models and noun-phrase rules can misclassify words; topic selection is not semantic understanding;
 - provider export formats can change;
 - Claude import remains experimental until validated against more real exports;
 - AI-first means temporal association, not causation;

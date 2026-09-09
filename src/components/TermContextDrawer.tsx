@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LaidOutTerm, MessageRole, TermContext } from '../domain/models';
+import { biasName } from '../analysis/presentation';
+import { TermMetrics } from './TermMetrics';
 
 interface TermContextDrawerProps {
   term: LaidOutTerm | null;
@@ -7,6 +9,13 @@ interface TermContextDrawerProps {
   returnFocusTo: HTMLElement | SVGElement | null;
   onClose: () => void;
   onHide: (term: string) => void;
+  periodLabel?: string | undefined;
+}
+
+export interface TermSelection {
+  term: LaidOutTerm;
+  contexts: TermContext[];
+  period: string;
 }
 
 const providerLabel = (provider: TermContext['provider']) =>
@@ -24,7 +33,7 @@ function HighlightedExcerpt({ context }: { context: TermContext }) {
   );
 }
 
-export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHide }: TermContextDrawerProps) {
+export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHide, periodLabel }: TermContextDrawerProps) {
   const [role, setRole] = useState<'both' | MessageRole>('both');
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -70,9 +79,10 @@ export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHi
         <header>
           <div>
             <p className="section-kicker">言葉の文脈</p>
+            {periodLabel && <p className="section-kicker">選択時の期間 {periodLabel}（日本時間）</p>}
             <h2 id="drawer-title">{term.display}</h2>
             <span className={`bias-pill bias-pill--${term.biasLabel}`}>
-              {term.biasLabel === 'user' ? 'あなた寄り' : term.biasLabel === 'assistant' ? 'AI寄り' : '共有語彙'}
+              {biasName(term)}
             </span>
           </div>
           <button ref={closeRef} className="icon-button" onClick={onClose} aria-label="閉じる" type="button">×</button>
@@ -82,6 +92,7 @@ export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHi
           <div><dt>AI</dt><dd>{term.dfAssistant}<small>発言</small></dd></div>
           <div><dt>会話</dt><dd>{term.conversationCoverage}<small>件</small></dd></div>
         </dl>
+        <TermMetrics term={term} />
         <div className="drawer-controls">
           <div className="segmented-control" aria-label="発言者で絞り込む">
             <button type="button" aria-pressed={role === 'both'} className={role === 'both' ? 'is-active' : ''} onClick={() => setRole('both')}>両方</button>
@@ -96,7 +107,7 @@ export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHi
               <div className="context-meta">
                 <span className={`role-dot role-dot--${context.role}`}>{context.role === 'user' ? 'あなた' : 'AI'}</span>
                 <span>{providerLabel(context.provider)}</span>
-                {context.createdAt !== null && <time>{new Intl.DateTimeFormat('ja-JP', { month: 'short', day: 'numeric' }).format(context.createdAt)}</time>}
+                {context.createdAt !== null ? <time>{new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Tokyo' }).format(context.createdAt)}</time> : <span>発言日時不明</span>}
               </div>
               <h3>{context.conversationTitle}</h3>
               <p><HighlightedExcerpt context={context} /></p>
@@ -105,6 +116,7 @@ export function TermContextDrawer({ term, contexts, returnFocusTo, onClose, onHi
         </div>
         <footer>
           <p>原文はこのブラウザ内だけで表示されています。</p>
+          <p>日時は日本時間です。発言日時が不明な場合、期間の判定には会話日時を使うことがあります。</p>
           <button className="button button--danger-ghost" type="button" aria-label="この語を表示から隠す" onClick={() => onHide(term.term)}>この語を隠す</button>
         </footer>
       </aside>

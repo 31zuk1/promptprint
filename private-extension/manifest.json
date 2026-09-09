@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Promptprint Private — Local History",
+  "version": "0.1.0",
+  "description": "非公開の個人用検証。ChatGPTの会話をこの端末内で保存・解析します。",
+  "permissions": ["scripting"],
+  "host_permissions": ["https://chatgpt.com/*"],
+  "action": { "default_title": "Promptprint Privateを開く" },
+  "background": { "service_worker": "background.js" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self'; img-src 'self' data: blob:;" }
+}

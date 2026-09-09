@@ -1,8 +1,10 @@
 # Promptprint architecture
 
-> Status: implementation snapshot, reconciled on 2026-09-05. Product and technical specifications remain the behavioral source of truth; known implementation tradeoffs are called out explicitly below.
+> Status: local morphological topic-extraction redesign, reconciled on 2026-09-09. Product and technical specifications remain the behavioral source of truth; known implementation tradeoffs are called out explicitly below.
 
 ## Goals
+
+Optional metric-based 3D is a presentation-only branch after the existing layout. `spatial.ts` owns exact metrics and fixed-domain orthographic projection; `spatialScene.ts` owns bounded labels, grid/ticks and depth order. `SpatialCloud` and `exportSpatial.ts` share this scene without modifying worker statistics. Both ordinary and isolated-private apps share mode/camera controls, dates, context snapshots and aggregate-only export. There is no added production dependency, WebGL context, runtime request, source-acquisition route or persistence. See the technical specification for axis formulas and camera bounds; the original Mirror Cloud remains the default.
 
 Promptprint turns local ChatGPT and experimental Claude exports into a role-aware lexical visualization without sending conversation text outside the browser. The architecture prioritizes:
 
@@ -24,7 +26,8 @@ Browser main thread
 Analysis Web Worker
   ZIP inventory -> provider detection -> adapters
        -> normalized conversations
-       -> cleaning -> tokenization -> phrases
+       -> bundled Japanese/English POS initialization
+       -> cleaning -> source-span lexical ledger -> grammatical noun phrases
        -> statistics -> insights -> layout inputs/results
        |
        | normalized corpus, aggregates, and bounded contexts
@@ -36,7 +39,7 @@ Browser main thread
   Dedicated local canvas drawing -> PNG Blob -> local download
 ```
 
-The deployed artifact is a static Vite bundle under `dist/`. There is no application server or database.
+The ordinary deployed artifact is a static Vite bundle under `dist/`, with its fixed dictionary assets. There is no application server or database. The separately authorized private build uses its existing extension-origin IndexedDB and read-only acquisition path; see `docs/PRIVATE_LOCAL.md`. Morphological analysis is shared without adding acquisition permissions or changing either build's retention boundary.
 
 ## Privacy boundary
 
@@ -54,7 +57,7 @@ They must not be written to:
 - exported PNG content;
 - user-facing diagnostics.
 
-The current implementation does not persist UI preferences or application data. The clear-data operation increments the active-operation generation, terminates the current worker, aborts an in-progress PNG operation, discards normalized messages and indexes, revokes tracked object URLs, resets filters, and returns to the empty state.
+The ordinary Web implementation does not persist UI preferences or application data. Its fixed same-origin dictionary files contain only shipped public language resources; no conversation value is placed in their requests or cache keys. The clear-data operation increments the active-operation generation, terminates the current worker (releasing its dictionary and volatile lexical cache), aborts an in-progress PNG operation, discards normalized messages and indexes, revokes tracked object URLs, resets filters, and returns to the empty state. The private build's existing explicit local-save/clear controls remain separate.
 
 Playwright guards tested demo and import flows so they can contact only the exact same-origin local test server. It also checks local/session storage, cookies, IndexedDB databases, Cache API entries, service-worker registrations, and the strings drawn into exported Canvas output. Storage is asserted after both the synthetic demo and an import containing private sentinels. These tests demonstrate the covered flows; they are not a proof about browser extensions or the host operating system.
 
@@ -153,44 +156,51 @@ The pure cleaning sequence:
 
 1. NFKC Unicode normalization;
 2. line-ending normalization;
-3. optional fenced-code removal;
+3. optional fenced code / inline-expression, complete delimited math, TeX-marker and recognized shell-prompt removal, with a bounded single-identifier inline exception;
 4. optional blockquote-line removal;
 5. mandatory URL, email-like string, long-hash, and obvious-path removal;
 6. Markdown destination removal while keeping safe anchor text;
-7. whitespace collapse;
+7. horizontal-whitespace collapse with hard newlines retained around removed source material;
 8. per-message length cap;
 9. zero-width and control-noise rejection.
 
-Cleaning never mutates `originalText`.
+Cleaning never mutates `originalText`. Mandatory URL/email/path/hash and known bounded citation-control removal leaves newline boundaries; otherwise English nouns separated by a removed URL or code span could become an invented phrase. Unmatched notation is not guessed away, and Markdown link labels remain available between hard boundaries. Inline code preserves only one ASCII identifier of at most 64 units (including dotted names or C++/C#-style forms), such as React / useEffect / Node.js, surrounded by newlines. Expressions, paths and arbitrary code snippets do not get this exception. These are bounded source-notation heuristics, not complete quotation/code detection.
 
-### Tokenization and phrases
+### Local morphology and the shared lexical ledger
 
-`Intl.Segmenter` with word granularity provides the baseline for Japanese and English. Latin canonical forms are lowercased while the most common source variant is kept for display. A deterministic local fallback covers browsers without the API.
+`morphology.ts` loads the pinned kuromoji/IPADIC core and dictionary in an analysis worker. It does not use the upstream Node or XHR loaders. `englishMorphology.ts` applies the bundled wink contextual English POS model; IPADIC's UNKNOWN noun label is not grammatical evidence for English. Both return observed forms and verified zero-based UTF-16 spans. Lemmas are available from upstream models but are never substituted into the measurement ledger or context query. Latin canonical forms are lowercased/NFKC-normalized, while the most common observed variant remains the display form.
 
-Noise filters remove punctuation, pure numbers, stopwords, short fragments, generic scaffolding, and symbol-dominated tokens.
+`lexical.ts` combines those spans, removes grammar/noise/hidden spans, and prepares one ordered `AnalysisDocument.words` ledger for both `topics` and `all` modes. Nouns, eligible verb/adjective forms and compound-building prefix/suffix atoms may remain measurement atoms; `displayEligible` and `topicEligible` carry separate presentation evidence. English adjectives can modify a noun phrase without becoming standalone topic nouns. Japanese non-independent/pronominal/numeric forms, unknown all-hiragana blobs, acknowledgments and punctuation are conservative exclusions. Recognized hiragana content nouns are not globally banned. Bounded orthographic acronym/identifier handling preserves appropriate technical units without claiming perfect entity recognition.
 
-Phrase extraction considers adjacent content-token bigrams and trigrams. Candidates must clear document-frequency, cross-conversation, boundary-stopword, and association thresholds. Candidate work is capped. Words-only mode bypasses this stage.
+Japanese `形容動詞語幹` is not automatically a standalone topic merely because IPADIC calls it a noun. Bounded copular/adverbial/attributive contexts (だ/です, に/な, という) mark that occurrence adjectival, while nominal uses such as 自由が / 不安を and real compounds may retain nominal evidence. This avoids treating every evaluative predicate as a subject without globally banning the same words as legitimate topics. Single-character Japanese atoms are not standalone topic labels but can still participate in compounds.
 
-The default phrase bounds are 5,000 input tokens per message, 20,000 distinct candidates, and 500,000 stored candidate occurrences. Cleaned analysis text is capped at 100,000 characters per message. Context generation examines at most the first 200,000 normalized source characters, stores at most 20 excerpts per selected term, and targets roughly 190 characters per excerpt.
+Japanese lattice windows are at most 256 UTF-16 units with 64 units of look-ahead, committing complete token boundaries. Sentence punctuation and surrogate characters delimit the BMP dictionary; long ordinary Japanese still covers the complete source. Indivisible pathological runs are marked non-lexical `limited` spans and counted in a safe warning, not chopped into fabricated words. English tagging sees at most 128 tokens per context window and 256 units per individual tagger input. Cleaned input remains capped at 100,000 units per message. Position mismatch or dictionary failure is explicit, not a fallback to the rejected heuristic-only foundation.
+
+### Grammatical noun phrases
+
+`nounPhrases.ts` selects actual contiguous noun sequences, up to six Japanese/mixed atoms or four English atoms and 40 UTF-16 units. English adjective modifiers are allowed only before a final noun; suffix-first and prefix-final fragments are disallowed. A phrase needs an eligible atom or the explicit productive Japanese nominal-derivation rule, and must appear in two distinct messages, even in one focused thread. Japanese whitespace lists are not compounds. Punctuation, newline, removed verbs/grammar and hidden spans remain boundaries. The former arbitrary 2/3-gram NPMI path and cross-conversation/three-message exception are no longer used by production analysis.
+
+The four-pass extractor first sketches distinct-message support in a fixed 6 MiB Count-Min sketch, then admits up to 100,000 strong candidate keys through a deterministic heap. It exactly recounts DF and all occurrences of those admitted keys over the full corpus, excludes true singletons, selects complete phrase families into a 500,000-position budget, and replays every retained position. Exact-DF ties prefer larger atom counts/longer phrases, then lower position cost and canonical order. A family that does not fit is omitted entirely; it never receives a truncated frequency. Approximation and hash collisions affect candidate admission only, not any returned measurement.
+
+Candidate-capacity status and examined/supported/retained/omitted-supported family counts are available in extraction metadata; a safe warning discloses budget exclusions. Saturation is not an exact count of all unseen vocabulary. Crucially, a large singleton tail no longer disables every phrase. Words-only mode bypasses phrase generation; atoms, message denominators and role token totals are unchanged. Context generation examines at most the first 200,000 normalized source characters, stores at most 20 excerpts per selected term, and targets roughly 190 characters per excerpt.
 
 ### Statistics
 
-Message-document frequency reduces the length advantage of assistant messages:
+Message occurrence rates describe the proportion of a role's messages containing the term. They do not correct message length:
 
 ```text
 df_r(w)   = messages by role r containing term w
 m_r       = analyzed messages by role r
-rate_r(w) = (df_r(w) + 0.5) / (m_r + 1)
+rate_r(w) = df_r(w) / m_r
 ```
 
 Bias:
 
 ```text
-rawBias        = ln(rate_user / rate_assistant)
-normalizedBias = tanh(rawBias / 2)
+normalizedBias = (rate_user - rate_assistant) / (rate_user + rate_assistant)
 ```
 
-Positive bias is user-dominant. Since user terms appear on the left:
+With both role denominators positive, user is bias >= .18, assistant <= -.18, shared requires positive DF in **both** roles and abs(bias) < .18. Missing-role comparisons are explicitly insufficient (neutral gray, placement bias 0, no shared insight). No pseudocounts are used. Thus 10/100 versus 0/4 gives bias +1, not shared. Positive bias is user-dominant. Since user terms appear on the left:
 
 ```text
 xTarget = centerX - normalizedBias * usableHalfWidth
@@ -207,7 +217,11 @@ importance     = ln(1 + messageDf) *
 
 Raw frequency is a stable tie breaker only. Font size uses logarithmic or quantile mapping.
 
-Top-term selection applies minimum frequency, hidden terms, noise filters, diversity across the three semantic zones, and n-gram deduplication before the requested count.
+Top-term selection applies minimum frequency, linguistic/display eligibility, hidden terms, mode-specific ranking, diversity across the three semantic zones, and positional compound representation before the requested count. The topic-ranking score below never replaces importance as the size metric.
+
+`findContainmentRepresentatives` sweeps actual per-document token/phrase intervals, counting each short occurrence once per longer term. At least two and >=80% must lie inside the same longer phrase. Equal spans, unrelated positions and substring matches alone do not qualify. Selection prefers non-redundant representatives, applies side quotas (37.5% / 25% / remainder), redistributes unused slots and may restore components when their representative was not chosen. Aggregate `TermStats`, analyzed vocabulary count, Echo and adoption inputs are unchanged. There is no phrase-count cap or substring-only deduplication. The caption distinguishes representative candidate counts, layout omissions and mobile subset exclusions.
+
+Role token rates use `1000 * occurrenceCount / contentTokenTotal`. The denominator is the complete `AnalysisDocument.words` stream after cleaning, normalization, grammar/noise and hidden-word filtering; a word numerator counts matches in exactly that stream. A phrase numerator counts accepted grammatical windows in that same stream, including every repeat of a returned phrase; phrases do not augment the denominator. Non-topic and prefix/suffix atoms retained in the common ledger remain denominator tokens even when not individually displayed. Zero denominators display unavailable. This is a local content-token definition, not model tokenization. Filter changes, including hidden words, recompute both numerator and denominator consistently. Role DF keys frame conversation ID and message ID to avoid cross-conversation ID reuse collisions.
 
 ### Echo rate
 
@@ -231,9 +245,11 @@ The result is temporal association only. It is hidden when evidence is insuffici
 
 ## Worker and cancellation
 
-The main thread sends either transferable file `ArrayBuffer` payloads or normalized demo conversations together with analysis settings. Every request and response has a monotonically increasing `requestId`. The worker reports named stages, safe diagnostics, normalized conversations, summary, statistics, insights, bounded contexts, layout, and recoverable failures. The main thread accepts only the newest request ID, so completion of an earlier queued filter analysis cannot overwrite newer settings or prematurely re-enable export.
+The main thread sends either transferable file `ArrayBuffer` payloads or normalized demo conversations together with analysis settings. Every request and response has a monotonically increasing `requestId`. Both workers first report `端末内の品詞辞書を準備中` and await the deduplicated dictionary initialization. They reject stale requests after asynchronous boundaries, including dictionary and private-store loading. Subsequent stages report safe diagnostics, normalized conversations, summary, statistics, insights, bounded contexts, layout, and recoverable failures. The main thread accepts only the newest request ID, so an earlier queued result cannot overwrite newer settings or prematurely re-enable export.
 
 After import, normalized conversations are retained in volatile React state. A filter change sends that normalized corpus back to the existing worker and reruns cleaning/statistics/layout, so it does not reread or reparse the selected files. This simple PoC design does structured-clone the normalized strings for each filter update; retaining the corpus behind worker-side identifiers is a future memory/performance improvement.
+
+The private worker already retains its stored corpus by namespace/revision. A worker-local WeakMap may reuse cleaned lexical data for the identical message object, source text and cleaning/hidden signature, under an 8,000,000-character admission ceiling. Dates, display mode and phrase choice do not alter those atoms. This is volatile performance reuse, not durable storage or a measurement shortcut; new structured-cloned message objects may not hit the cache, and terminating the worker releases it.
 
 Cancellation is implemented by terminating the dedicated worker rather than by cooperative checks inside the synchronous analysis functions. File `arrayBuffer()` reads cannot be aborted, so an operation-generation guard ignores their late completion. Worker callbacks verify worker identity, operation generation, and analysis request ID. Clear-data invalidates both generations, terminates the worker, aborts pending PNG work, revokes tracked object URLs, and clears volatile state. A new worker is created lazily for the next operation.
 
@@ -246,11 +262,13 @@ The cloud uses interactive SVG, approximately 1100 × 620 logical units:
 3. derive target x from bias;
 4. derive target y from a stable hash of term and filter signature;
 5. sort largest-first with stable ties;
-6. search a deterministic spiral or rings near the target;
+6. intersect `targetX ± 5.5% of canvas width` with canvas bounds and the full-box semantic half (4-unit center clearance), then exhaust free Y intervals before changing X;
 7. reject padded collisions and out-of-bounds positions;
-8. omit or reduce the smallest unplaceable terms and report the count.
+8. retry common font scales 1.0–0.2 in steps of .1 with a shared 13-unit floor, and bounded whole-cloud column anchors (0 / -.9 / +.9 of the allowed X drift); retain the most words, prefer larger earlier retries on ties, and report omissions in the persistent caption.
 
 There is no default rotation. The same data and settings must generate the same coordinates and colors.
+
+No fallback may relax X limits or move a dominant word to the opposite half. Width estimates are never clamped to canvas width; an overlong label is scaled with the cloud or omitted. SVG measures the actual local-font text and contracts it only when wider than the reserved glyph allowance. Mobile overview reuses the same algorithm with width 390, inset 50, padding 8, minimum collision height 44 and observed canvas height; at most 24 quota-selected terms are attempted. Full desktop coordinates remain unchanged in horizontally pannable detail mode.
 
 SVG terms are focusable controls. Hover/focus shows statistics; click/Enter opens context; Escape closes and restores focus. Position, color, edge labels, and accessible names all communicate side meaning.
 
@@ -280,6 +298,8 @@ The implementation draws a dedicated 2,200 × 1,340 share card directly onto a l
 
 It excludes original messages, excerpts, conversation titles, emails, diagnostics, tooltips, drawers, buttons, and hidden terms. The export button is disabled while analysis or another export is active. An `AbortSignal` prevents a delayed Canvas callback from starting a download after clear-data. The object URL is normally revoked one second after download and is also tracked for immediate revocation on clear/unmount. The filename is `promptprint-YYYY-MM-DD.png`.
 
+PNG preserves screen collision geometry: X positions scale 1.76, Y positions scale 1.23, font size scales by the smaller factor (1.23, not the former 1.75), and `fillText` receives the corresponding unpadded width cap. Source/period/conversation count, meanings of X/size/Y, message-rate/shared definition, quota caveat and physical omission count remain visible. Browser regression checks measure actual Canvas ink extents and SVG glyph boxes for one-sided 40/80/120 fixtures.
+
 ## Dependencies
 
 Current declared runtime dependencies:
@@ -288,10 +308,12 @@ Current declared runtime dependencies:
 | --- | --- | --- |
 | React / React DOM | UI composition and rendering | bundled locally |
 | fflate | browser-side ZIP inventory and decompression | bundled locally; no network service |
+| kuromoji 0.1.2 | Japanese morphological lattice and packaged IPADIC dictionary | direct browser-safe core imports; 12 fixed same-origin/extension assets; no text transmission |
+| wink-pos-tagger 2.2.2 | English contextual POS, avoiding Japanese UNKNOWN-as-noun errors | model and transitive lexicons bundled in Worker JavaScript; no runtime model service |
 
 Current development dependencies provide Vite, TypeScript, ESLint, Vitest, Testing Library, jsdom, and Playwright. Keep dependencies pinned through `pnpm-lock.yaml`.
 
-Any added production dependency needs a concise justification here, size/maintenance consideration, and confirmation that it does not load remote assets or transmit data.
+The linguistic dependencies deliberately trade size for grammatical evidence that the previous wordlike/stopword-only design lacked. IPADIC assets total 17,791,956 compressed bytes and 100,260,388 expanded bytes, before JavaScript indexes, message caches and temporary lattice work. The integrated analysis workers are approximately 2.1 MB of JavaScript, largely the English model; actual build hashes/sizes belong in the ExecPlan. Initialization is per worker, sequentially loading fixed-size gzip outputs. The libraries/dictionaries are older resources, not automatically updated contemporary-language models; pinned lockfiles and behavioral regression fixtures are essential. `morphology-assets.mjs` emits Apache/IPADIC notices and applicable MIT licenses alongside both builds. Primary upstream references: [kuromoji.js](https://github.com/takuyaa/kuromoji.js), [wink-pos-tagger](https://github.com/winkjs/wink-pos-tagger).
 
 ## Failure behavior
 
@@ -327,3 +349,11 @@ Current Playwright coverage includes:
 Empty-ZIP, ZIP-size, content-extraction, and active-branch sentinel cases are unit-tested rather than duplicated in Playwright. Tooltip visibility and its role statistics have a dedicated keyboard-focus browser assertion.
 
 The canonical visual artifact is `artifacts/promptprint-demo.png`.
+
+## Topic evidence and display-only ranking (redesign, 2026-09-09)
+
+`statistics.ts` aggregates occurrence-level grammatical evidence separately from its unchanged quantitative metrics. A candidate is topic-eligible when `nounMessageCount / messageDf >= 0.5`; a message counts once if it contains any eligible nominal occurrence. All accepted observations still contribute to DF, role rates and token frequency. Exact procedural-word guards suppress standalone scaffolding without removing useful compound atoms. Prefix/suffix and English adjective atoms are phrase building blocks, not isolated topic labels.
+
+Production topic ranking is `ln(1 + D) × (1 + ln((C + 1)/(c + 1))) × D/(D + 2)`, where `D` is candidate message DF, `C` the selected conversation count and `c` candidate conversation coverage. Repetition support and inverse conversation coverage replace the previous maximum-35% bonus. The floor retains all-conversation themes; it does not establish semantic relevance or external-population distinctiveness. Broad mode still orders by importance. `vocabulary.ts` consumes this evidence, then quotas and actual-position containment select only eligible terms without filler. Compatibility helpers for handcrafted legacy statistics are not the production scoring path.
+
+The same completed result metadata drives ordinary/private, 2D/3D, timeline, insights, provider summaries and Canvas export. Size remains `TermStats.importance`; bias/rates/X/Y/Z retain their definitions. Changing only topic/broad mode preserves every surviving term's counts and context, although the selected set can change its relative font scaling. Changing the tokenizer release can change the ledger; no cross-release count invariance is claimed.

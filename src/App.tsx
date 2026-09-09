@@ -7,8 +7,13 @@ import { InsightCards } from './components/InsightCards';
 import { InsightSummary } from './components/InsightSummary';
 import { Landing } from './components/Landing';
 import { MirrorCloud } from './components/MirrorCloud';
+import { SpatialCloud } from './components/SpatialCloud';
+import { VisualizationSwitch, type VisualizationMode } from './components/VisualizationSwitch';
+import { DEFAULT_CAMERA, type Camera } from './analysis/spatial';
 import { StatsCards } from './components/StatsCards';
-import { TermContextDrawer } from './components/TermContextDrawer';
+import { TermContextDrawer, type TermSelection } from './components/TermContextDrawer';
+import { TimelineControls } from './components/TimelineControls';
+import { datasetScopeLabel, selectedPeriodLabel } from './analysis/presentation';
 import { createDemoConversations } from './demo/demoConversations';
 import { emptyImportDiagnostics } from './domain/diagnostics';
 import {
@@ -39,10 +44,14 @@ export default function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [selectedTerm, setSelectedTerm] = useState<LaidOutTerm | null>(null);
+  const [selection, setSelection] = useState<TermSelection | null>(null);
+  const selectedTerm = selection?.term ?? null;
   const [returnFocusTo, setReturnFocusTo] = useState<HTMLElement | SVGElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [timelinePauseKey, setTimelinePauseKey] = useState(0);
+  const [visualization, setVisualization] = useState<VisualizationMode>('mirror');
+  const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
   const workerRef = useRef<Worker | null>(null);
   const operationRef = useRef(0);
   const analysisRequestRef = useRef(0);
@@ -86,7 +95,7 @@ export default function App() {
         setError(message.message);
         setConversations([]);
         setResult(null);
-        setSelectedTerm(null);
+        setSelection(null);
         setReturnFocusTo(null);
         setNotice(null);
         setSettings(DEFAULT_ANALYSIS_SETTINGS);
@@ -114,7 +123,7 @@ export default function App() {
       setError('解析処理を開始できませんでした。ページを再読み込みして、もう一度お試しください。');
       setConversations([]);
       setResult(null);
-      setSelectedTerm(null);
+      setSelection(null);
       setReturnFocusTo(null);
       setNotice(null);
       setSettings(DEFAULT_ANALYSIS_SETTINGS);
@@ -218,6 +227,8 @@ export default function App() {
   };
 
   const updateSettings = (next: AnalysisSettings) => {
+    exportRef.current?.abort();
+    setSelection(null);
     setSettings(next);
     if (conversations.length === 0) return;
     setBusy(true);
@@ -233,11 +244,13 @@ export default function App() {
     });
   };
 
-  const closeDrawer = useCallback(() => setSelectedTerm(null), []);
+  const closeDrawer = useCallback(() => setSelection(null), []);
 
   const selectTerm = (term: LaidOutTerm, target: HTMLElement | SVGElement | null = null) => {
+    setTimelinePauseKey((value) => value + 1);
+    if (!result) return;
     setReturnFocusTo(target instanceof HTMLElement || target instanceof SVGElement ? target : null);
-    setSelectedTerm(term);
+    setSelection({ term, contexts: result.contexts[term.term] ?? [], period: selectedPeriodLabel(result) });
   };
 
   const selectInsightTerm = (term: TermStats, target: HTMLButtonElement) => {
@@ -272,7 +285,7 @@ export default function App() {
     setConversations([]);
     setResult(null);
     setDiagnostics(emptyImportDiagnostics());
-    setSelectedTerm(null);
+    setSelection(null);
     setReturnFocusTo(null);
     setBusy(false);
     setExporting(false);
@@ -280,6 +293,8 @@ export default function App() {
     setNotice(null);
     setConfirmClear(false);
     setSettings(DEFAULT_ANALYSIS_SETTINGS);
+    setVisualization('mirror');
+    setCamera(DEFAULT_CAMERA);
     setStatus('landing');
   };
 
@@ -297,6 +312,7 @@ export default function App() {
   };
 
   const exportPng = async () => {
+    setTimelinePauseKey((value) => value + 1);
     if (!result || busy || exporting) return;
     const operation = operationRef.current;
     const generation = exportGenerationRef.current + 1;
@@ -308,7 +324,7 @@ export default function App() {
     setExporting(true);
     try {
       setNotice('PNGを準備しています…');
-      await downloadPromptprintPng(result, controller.signal);
+      await downloadPromptprintPng(result, controller.signal, { view: visualization, camera });
       if (operationRef.current !== operation || exportGenerationRef.current !== generation) return;
       setNotice('PNGを書き出しました。');
     } catch (exportError: unknown) {
@@ -333,12 +349,21 @@ export default function App() {
   return (
     <main className="dashboard">
       <section className="dashboard__opening" aria-label="言葉の指紋の全体像">
-        <MirrorCloud
+        <TimelineControls result={result} settings={settings} busy={busy} blocked={exporting || !!selectedTerm || !!error} pauseKey={timelinePauseKey} onChange={updateSettings}>
+          <VisualizationSwitch mode={visualization} disabled={exporting} onChange={(mode) => { setTimelinePauseKey((value) => value + 1); setVisualization(mode); }} />
+        </TimelineControls>
+        {visualization === 'spatial' ? <SpatialCloud result={result} camera={camera} disabled={exporting}
+          onCameraChange={(next) => { setTimelinePauseKey((value) => value + 1); setCamera(next); }}
+          onSelect={selectTerm} scopeLabel={datasetScopeLabel(result.summary, result.timeline?.sourceProviders)} /> : <MirrorCloud
           terms={result.layout}
+          summary={result.summary}
+          display={result.display}
+          periodLabel={selectedPeriodLabel(result)}
+          scopeLabel={datasetScopeLabel(result.summary, result.timeline?.sourceProviders)}
           showProviderCoverage={result.summary.providers.filter((provider) => provider !== 'demo').length > 1}
           onSelect={selectTerm}
           testId="mirror-cloud"
-        />
+        />}
       </section>
 
       <section className="analysis-shell" id="analysis" aria-labelledby="analysis-title">
@@ -359,7 +384,7 @@ export default function App() {
             >
               <span className="label--desktop">クラウド全体を見る</span><span className="label--mobile">全体</span>
             </button>
-            <button className="button button--secondary button--small" type="button" disabled={busy || exporting} aria-busy={busy || exporting} onClick={() => void exportPng()}>
+            <button className="button button--secondary button--small" type="button" disabled={busy || exporting} aria-busy={busy || exporting} aria-label={exporting ? '書き出し中…' : 'PNGを書き出す'} onClick={() => void exportPng()}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m0 0 4-4m-4 4L6 8M4 15v2h12v-2" /></svg>
               {exporting ? '書き出し中…' : <><span className="label--desktop">PNGを書き出す</span><span className="label--mobile">PNG</span></>}
             </button>
@@ -371,7 +396,7 @@ export default function App() {
             <div>
               <p className="section-kicker">言葉の指紋</p>
               <h1 id="analysis-title">あなたとAIの、<em>語彙の重なり。</em></h1>
-              <p>左はあなたが持ち込む言葉、右はAIが返す言葉。中央には、会話の中で共有された語彙が集まります。</p>
+              <p>{visualization === 'mirror' ? '左ほどあなた、右ほどAIの発言に現れる割合が高い語です。' : 'X軸の−1側ほどあなた、+1側ほどAIの発言に現れる割合が高い語です。回転後の画面の左右とは異なります。'}共有語彙は、双方で実際に観測され、出現率が近い語に限ります。</p>
             </div>
           </div>
 
@@ -384,7 +409,7 @@ export default function App() {
               settings={settings}
               providers={[...new Set(conversations.map((conversation) => conversation.provider))]}
               busy={busy}
-              onChange={updateSettings}
+              onChange={(next) => { setTimelinePauseKey((value) => value + 1); updateSettings(next); }}
             />
           </details>
 
@@ -397,7 +422,7 @@ export default function App() {
 
           <section className="method-note">
             <span aria-hidden="true">i</span>
-            <div><strong>言葉の指紋の読み方</strong><p>語の位置は「誰がより多く使ったか」の相対値です。頻度は重要性や正しさを示しません。分かち書きとフレーズ抽出はヒューリスティックです。</p></div>
+            <div><strong>言葉の指紋の読み方</strong><p>{visualization === 'mirror' ? '2Dの左右は「その語を含む発言の割合」の役割間比較、上下に意味はありません。大きさは出現発言数と会話カバー件数の対数スコアです。' : '3DはX＝役割間の使用傾向、Y＝役割別発言出現率の均等平均、Z＝対象会話のカバー率です。点・文字の大きさに意味はありません。'}文章の長さを補正する指標ではなく、重要性や正しさも示しません。分かち書きと複合語の抽出はヒューリスティックです。</p></div>
           </section>
 
           <footer className="dashboard__footer">
@@ -421,7 +446,8 @@ export default function App() {
       <TermContextDrawer
         key={selectedTerm?.term ?? 'closed'}
         term={selectedTerm}
-        contexts={selectedTerm ? result.contexts[selectedTerm.term] ?? [] : []}
+        contexts={selection?.contexts ?? []}
+        periodLabel={selection?.period}
         returnFocusTo={returnFocusTo}
         onClose={closeDrawer}
         onHide={hideTerm}

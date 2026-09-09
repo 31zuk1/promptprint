@@ -38,7 +38,7 @@ export function InsightCards({ insights, onSelectTerm }: InsightCardsProps) {
           <div className="insight-card__icon" aria-hidden="true" />
           <p className="insight-card__kicker">あなた側</p>
           <h3>あなたが持ち込む言葉</h3>
-          <p>複数の会話に現れ、あなた側の比率が高い語です。</p>
+          <p>現在の表示候補のうち、あなた側の比率が高い語です。</p>
           <TermChips terms={insights.userIntroduced} onSelect={onSelectTerm} />
         </article>
         <article className="insight-card insight-card--ai">

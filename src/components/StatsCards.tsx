@@ -12,7 +12,7 @@ const providerName = (provider: Provider) => ({
 
 const dateLabel = (start: number | null, end: number | null) => {
   if (start === null || end === null) return '日時情報なし';
-  const format = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' });
+  const format = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Tokyo' });
   return `${format.format(start)} – ${format.format(end)}`;
 };
 

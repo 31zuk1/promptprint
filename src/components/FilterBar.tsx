@@ -33,14 +33,24 @@ export function FilterBar({ settings, providers, busy, onChange }: FilterBarProp
           <option value="30d">直近30日</option>
           <option value="90d">直近90日</option>
           <option value="1y">直近1年</option>
+          <option value="custom">日付指定（クラウド上部で変更）</option>
+        </select>
+      </label>
+      <label>
+        <span>語の選び方</span>
+        <select value={settings.vocabularyFocus ?? 'topics'} disabled={busy}
+          onChange={(event) => set('vocabularyFocus', event.target.value as AnalysisSettings['vocabularyFocus'])}>
+          <option value="topics">話題を優先</option>
+          <option value="all">使用語を広く</option>
         </select>
       </label>
       <label>
         <span>表示する語</span>
         <select value={settings.termLimit} disabled={busy} onChange={(event) => set('termLimit', Number(event.target.value) as AnalysisSettings['termLimit'])}>
-          {[40, 60, 80, 120].map((value) => <option value={value} key={value}>{value}語</option>)}
+          {[40, 60, 80, 120].map((value) => <option value={value} key={value}>最大{value}語</option>)}
         </select>
       </label>
+      <p className="filter-vocabulary-note">話題優先は端末内の品詞解析で名詞・名詞句を抽出し、発言数と会話ごとの特徴で選びます。意味を理解するモデルではありません。語数は上限です。</p>
       <fieldset>
         <legend>語の種類</legend>
         <div className="segmented-control">

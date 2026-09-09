@@ -10,18 +10,22 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:private": "pnpm typecheck && node scripts/build-private.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "e2e:private": "pnpm build:private && playwright test --config playwright.private.config.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "dependencies": {
     "fflate": "0.8.3",
+    "kuromoji": "0.1.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "wink-pos-tagger": "2.2.2"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
